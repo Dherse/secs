@@ -1,7 +1,6 @@
 use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
 use serde::{Deserialize, Serialize};
-use syn::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Resource {
@@ -24,13 +23,13 @@ impl Resource {
         Ident::new(&self.as_field_name(), Span::call_site())
     }
 
-    pub fn as_ty(&self) -> Path {
+    pub fn as_ty(&self) -> TokenStream {
         syn::parse_str(&self.path).expect("Failed to parse path")
     }
 
     pub fn as_struct_field(&self) -> TokenStream {
         let name = self.as_field_ident();
-        let ty: Path = self.as_ty();
+        let ty: TokenStream = self.as_ty();
 
         quote::quote! {
             #name: #ty
@@ -39,7 +38,7 @@ impl Resource {
 
     pub fn as_builder_field(&self) -> TokenStream {
         let name = self.as_field_ident();
-        let ty: Path = self.as_ty();
+        let ty: TokenStream = self.as_ty();
 
         if self.default {
             quote::quote! {

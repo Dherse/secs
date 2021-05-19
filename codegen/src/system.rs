@@ -1,7 +1,6 @@
 use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
 use serde::{Deserialize, Serialize};
-use syn::Path;
 
 use crate::{component::Component, find_component, find_resource, resource::Resource};
 
@@ -41,13 +40,13 @@ impl System {
         Ident::new(&self.as_field_name(), Span::call_site())
     }
 
-    pub fn as_ty(&self) -> Option<Path> {
+    pub fn as_ty(&self) -> Option<TokenStream> {
         Some(syn::parse_str(&self.state.as_ref()?).expect("Failed to parse path"))
     }
 
     pub fn as_struct_field(&self) -> Option<TokenStream> {
         let name = self.as_ident();
-        let ty: Path = self.as_ty()?;
+        let ty: TokenStream = self.as_ty()?;
 
         Some(quote::quote! {
             #name: #ty
@@ -56,7 +55,7 @@ impl System {
 
     pub fn as_builder_field(&self) -> Option<TokenStream> {
         let name = self.as_ident();
-        let ty: Path = self.as_ty()?;
+        let ty: TokenStream = self.as_ty()?;
 
         Some(quote::quote! {
             #name: Option<#ty>
@@ -293,7 +292,7 @@ impl SystemKind {
     ) -> TokenStream {
         match self {
             SystemKind::ForEachFunction => {
-                let function: Path =
+                let function: TokenStream =
                     syn::parse_str(&system.path).expect("Failed parsing function path");
 
                 let mut comp_iter = quote::quote! {};

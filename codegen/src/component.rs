@@ -1,7 +1,6 @@
 use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
 use serde::{Deserialize, Serialize};
-use syn::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ComponentStorage {
@@ -170,7 +169,7 @@ pub struct Component {
 }
 
 impl ComponentStorage {
-    pub fn as_type(&self, ty: Path) -> TokenStream {
+    pub fn as_type(&self, ty: TokenStream) -> TokenStream {
         match self {
             ComponentStorage::Vec => quote::quote! { Vec<Option<#ty>> },
             ComponentStorage::HashMap => {
@@ -188,7 +187,7 @@ impl ComponentStorage {
         }
     }
 
-    pub fn as_type_init(&self, ty: Path) -> TokenStream {
+    pub fn as_type_init(&self, ty: TokenStream) -> TokenStream {
         match self {
             ComponentStorage::Vec => quote::quote! { Vec::<Option<#ty>> },
             ComponentStorage::HashMap => {
@@ -232,7 +231,7 @@ impl Component {
         Ident::new(&self.as_bitset_name(), Span::call_site())
     }
 
-    pub fn as_ty(&self) -> Path {
+    pub fn as_ty(&self) -> TokenStream {
         syn::parse_str(&self.path).expect("Failed to parse path")
     }
 

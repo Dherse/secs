@@ -9,7 +9,6 @@ use std::{
 use config::Config;
 use proc_macro2::{Ident, Span, TokenStream};
 use serde::Deserialize;
-use syn::Path;
 
 use crate::{component::Component, ecs::ECS, resource::Resource, system::System};
 
@@ -120,7 +119,7 @@ fn make_struct(
         .iter()
         .map(|derive| Ident::new(derive, Span::call_site()));
 
-    let err_ty: Path = syn::parse_str(
+    let err_ty: TokenStream = syn::parse_str(
         &main
             .error
             .clone()
