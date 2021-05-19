@@ -1,0 +1,33 @@
+#![enable(implicit_some)]
+[
+    System(
+        // The name of the system
+        name: "physics",
+
+        // The path of the function
+        path: "crate::physics_system",
+
+        // The type of system it is: Function, AsyncFunction, ForEachFunction, ForEachAsyncFunction
+        // Foreach types will receive reference (mutable or not) to the underlying data.
+        // Other will receive iterators over the data that allows joining by the entity ID with the others
+        kind: ForEachFunction,
+
+        // Allows for each functions to control the flow, that means they can stop the execution at any time.
+        // This allows a system to "break" the overlying iterator.
+        control_flow: false,
+
+        // Whether or not this function returns a result. The error **must** implement Into<TheEcsErrorType>
+        result: false,
+
+        // The stage where this system should be ran, between each stage the stage will be commited
+        stage: "Main",
+
+        // States are the first arguments in a function
+        state: None,
+
+        signature: [
+            Component(Write, "position"),
+            Component(Option(Read), "velocity"),
+        ],
+    )
+]

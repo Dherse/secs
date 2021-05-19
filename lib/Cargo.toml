@@ -1,0 +1,21 @@
+[package]
+name = "secs"
+version = "0.1.0"
+authors = ["Sébastien d'Herbais de Thun <sebastien.dherbais@student.uclouvain.be>"]
+edition = "2018"
+
+[dependencies]
+# Async traits using dynamic dispatch
+async-trait = "0.1.50"
+
+# Async traits using generic associated types
+real-async-trait = { version = "0.0.2", optional = true }
+
+# Bitset for designating occupation
+hibitset = "0.6.3"
+
+# Fast but non-secure hash maps
+fxhash = "0.2.1"
+
+# Fast synchronization primitives
+parking_lot = "0.11.1"

@@ -1,0 +1,22 @@
+[package]
+name = "secs-example"
+version = "0.1.0"
+authors = ["Sébastien d'Herbais de Thun <sebastien.dherbais@student.uclouvain.be>"]
+edition = "2018"
+
+[features]
+default = []
+gat = [ "real-async-trait" ]
+
+[dependencies]
+# The main SECS library
+secs = { path = "../lib" }
+
+# Async traits using dynamic dispatch
+async-trait = "0.1.50"
+
+# Async traits using generic associated types
+real-async-trait = { version = "0.0.2", optional = true }
+
+[build-dependencies]
+secs-codegen = { path = "../codegen" }

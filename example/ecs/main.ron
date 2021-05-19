@@ -1,0 +1,11 @@
+ECS(
+    // The name of the output ECS
+    name: "MyECS",
+
+    // What traits to derive on this ECS
+    derive: [ "Clone", "Debug"],
+
+    // The stages of this ECS, between each stage a commit and barrier will be done making sure that
+    // every system that have ran so far are done and that their command buffers are commited.
+    stages: [ "Main" ],
+)

@@ -1,0 +1,22 @@
+[workspace]
+members = [
+    "lib",
+    "codegen",
+    "example"
+]
+
+[profile.release]
+# Enable link-time optimization, eliminates more code and inlines across crate boundaries.
+lto = true
+
+# Limits the number of threads to 1 to improve the level of optimization that may be achieved
+codegen-units = 16
+
+# Debug info in release build, does not impact performance
+debug = true
+
+# Optimization level, maximizes performance
+opt-level = 3
+
+# Panic abort leads to smaller and faster executables
+panic = "abort"

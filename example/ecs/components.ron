@@ -1,0 +1,32 @@
+[
+    Component(
+        // The path to the component
+        path: "crate::Position",
+
+        // The name of the component (allows multiple components with the same type but different names)
+        name: "position",
+
+        // The storage type of this component: Vec, HashMap, BTreeMap, DenseVec, Flagged(BaseStorageKind), Null
+        storage: Vec,
+    ),
+    Component(
+        // The path to the component
+        path: "crate::Velocity",
+
+        // The name of the component (allows multiple components with the same type but different names)
+        name: "velocity",
+
+        // The storage type of this component: Vec, HashMap, BTreeMap, DenseVec, Flagged(BaseStorageKind), Null
+        storage: Vec,
+    ),
+    Component(
+        // The path to the component
+        path: "crate::Acceleration",
+
+        // The name of the component (allows multiple components with the same type but different names)
+        name: "acceleration",
+
+        // The storage type of this component: Vec, HashMap, BTreeMap, DenseVec, Flagged(BaseStorageKind), Null
+        storage: Vec,
+    ),
+]

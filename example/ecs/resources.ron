@@ -1,0 +1,12 @@
+[
+    Resource(
+        // The name of the resource
+        name: "delta_time",
+
+        // The path to the resource type
+        path: "crate::DeltaTime",
+        
+        // Whether or not the resource implement default
+        default: true,
+    )
+]
