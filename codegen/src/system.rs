@@ -118,9 +118,7 @@ impl Accessor {
                     quote::quote! { #content }
                 }
             }
-            Accessor::Option(val) => {
-                val.wrapper_init(content, bare)
-            }
+            Accessor::Option(val) => val.wrapper_init(content, bare),
         }
     }
 
@@ -135,7 +133,7 @@ impl Accessor {
     pub fn is_opt(&self) -> bool {
         match self {
             Accessor::Option(_) => true,
-            Accessor::Read | Accessor::Mutex | Accessor::RwLock  |Accessor::Write => false,
+            Accessor::Read | Accessor::Mutex | Accessor::RwLock | Accessor::Write => false,
         }
     }
 }
@@ -209,7 +207,13 @@ impl Element {
                 );
                 let field_name = component.as_ident();
                 let init = accessor.wrapper_init(
-                    component.storage.read_function(id, quote::quote! { self.#field_name }, accessor.is_mut(), accessor.is_opt()),
+                    component.storage.read_function(
+                        component,
+                        id,
+                        quote::quote! { self.#field_name },
+                        accessor.is_mut(),
+                        accessor.is_opt(),
+                    ),
                     false,
                 );
 
@@ -219,7 +223,7 @@ impl Element {
             }
             Element::Entity => quote::quote! { let entt = #id; },
             Element::CommandBuffer => todo!(),
-            Element::Const(_) => quote::quote! {}
+            Element::Const(_) => quote::quote! {},
         }
     }
 
@@ -281,7 +285,12 @@ pub enum SystemKind {
 }
 
 impl SystemKind {
-    pub fn make_run(&self, system: &System, components: &[Component], resources: &[Resource]) -> TokenStream {
+    pub fn make_run(
+        &self,
+        system: &System,
+        components: &[Component],
+        resources: &[Resource],
+    ) -> TokenStream {
         match self {
             SystemKind::ForEachFunction => {
                 let function: Path =
@@ -294,7 +303,7 @@ impl SystemKind {
                         if accessor.is_opt() {
                             continue;
                         }
-                        
+
                         let component = find_component(components, name);
                         let bitset = component.as_bitset();
                         let new_comp = quote::quote! {
@@ -342,10 +351,10 @@ impl SystemKind {
                         )#flag #end_if
                     }
                 }
-            },
+            }
             SystemKind::AsyncFunction => todo!(),
             SystemKind::Function => todo!(),
-            SystemKind::ForEachAsyncFunction => todo!()
+            SystemKind::ForEachAsyncFunction => todo!(),
         }
     }
 }

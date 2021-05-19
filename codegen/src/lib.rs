@@ -11,12 +11,7 @@ use proc_macro2::{Ident, Span, TokenStream};
 use serde::Deserialize;
 use syn::Path;
 
-use crate::{
-    component::Component,
-    ecs::ECS,
-    resource::Resource,
-    system::System,
-};
+use crate::{component::Component, ecs::ECS, resource::Resource, system::System};
 
 pub mod component;
 pub mod config;
@@ -132,7 +127,9 @@ fn make_struct(
     )
     .expect("Failed to parse error type");
 
-    let system_runs = systems.iter().map(|sys| sys.kind.make_run(sys, components, resources));
+    let system_runs = systems
+        .iter()
+        .map(|sys| sys.kind.make_run(sys, components, resources));
 
     let component_fns = components.iter().map(|comp| {
         let name = comp.as_ident();
@@ -144,7 +141,7 @@ fn make_struct(
         let doc_str_del = format!("Removes the component '{}' of type [`{}`] from the `entity`, returns the component if it had it", comp.name, comp.path);
 
         let set_call = comp.storage.write_function(quote::quote! { entity }, quote::quote! { value });
-        let del_call = comp.storage.remove_function(quote::quote! { entity });
+        let del_call = comp.storage.remove_function(comp, quote::quote! { entity }, quote::quote! { exists });
 
         quote::quote! {
             #[doc = #doc_str_add]
@@ -162,7 +159,7 @@ fn make_struct(
                 assert!((entity.index() as usize) < self.index_, "Entity ID is not in the existing range");
                 assert!(self.alive.contains(entity.index()), "Entity is not alive");
 
-                self.#bitset_name.remove(entity.index());
+                let exists = self.#bitset_name.remove(entity.index());
                 self.#name#del_call
             }
         }
@@ -170,15 +167,22 @@ fn make_struct(
 
     let push_calls = components.iter().map(|comp| {
         let name = comp.as_ident();
-        comp.storage.alloc_function(quote::quote! { self.#name }, quote::quote! { entity })
+        comp.storage
+            .alloc_function(quote::quote! { self.#name }, quote::quote! { entity })
     });
 
     let delete_calls = components.iter().map(|comp| {
-        let delete = comp.storage.remove_function(quote::quote! { entity });
+        let bitset = comp.as_bitset();
+        let delete =
+            comp.storage
+                .remove_function(comp, quote::quote! { entity }, quote::quote! { exists });
         let name = comp.as_ident();
 
-        quote::quote!{
-            self.#name#delete;
+        quote::quote! {
+            {
+                let exists = self.#bitset.remove(entity.index());
+                self.#name#delete;
+            }
         }
     });
 
@@ -252,7 +256,9 @@ fn make_builder(
 
     let comp_set_with_cap = components.iter().map(|comp| {
         let name = comp.as_ident();
-        let call = comp.storage.storage_init_with_capacity(quote::quote!{capacity});
+        let call = comp
+            .storage
+            .storage_init_with_capacity(quote::quote! {capacity});
         quote::quote! {
             #name: #call
         }

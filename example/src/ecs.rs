@@ -5,9 +5,11 @@ pub struct MyEcs {
     comp_position: Vec<Option<crate::Position>>,
     comp_velocity: Vec<Option<crate::Velocity>>,
     comp_acceleration: Vec<Option<crate::Acceleration>>,
+    comp_enabled: (),
     com_bitset_position: ::secs::hibitset::BitSet,
     com_bitset_velocity: ::secs::hibitset::BitSet,
     com_bitset_acceleration: ::secs::hibitset::BitSet,
+    com_bitset_enabled: ::secs::hibitset::BitSet,
     resource_delta_time: crate::DeltaTime,
 }
 impl MyEcs {
@@ -17,7 +19,13 @@ impl MyEcs {
     }
     #[doc = "Runs the ECS"]
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        for id in ::secs::hibitset::BitSetAnd(&self.com_bitset_position, &self.alive) {
+        for id in ::secs::hibitset::BitSetAnd(
+            ::secs::hibitset::BitSetAnd(
+                &self.com_bitset_enabled,
+                ::secs::hibitset::BitSetAnd(&self.com_bitset_velocity, &self.com_bitset_position),
+            ),
+            &self.alive,
+        ) {
             let id = ::secs::Entity::new(id);
             let sys_physics_comp_position = self
                 .comp_position
@@ -29,8 +37,19 @@ impl MyEcs {
                 .comp_velocity
                 .get(id.index() as usize)
                 .unwrap()
-                .as_ref();
-            crate::physics_system(sys_physics_comp_position, sys_physics_comp_velocity);
+                .as_ref()
+                .unwrap();
+            let sys_physics_comp_enabled = if self.com_bitset_enabled.contains(id.index()) {
+                Some(Default::default())
+            } else {
+                None
+            }
+            .unwrap();
+            crate::physics_system(
+                sys_physics_comp_position,
+                sys_physics_comp_velocity,
+                sys_physics_comp_enabled,
+            );
         }
         Ok(())
     }
@@ -47,9 +66,27 @@ impl MyEcs {
     #[doc = "Deletes an entity, returns true if this entity was alive"]
     pub fn delete(&mut self, entity: ::secs::Entity) -> bool {
         if self.alive.remove(entity.index()) {
-            self.comp_position[entity.index() as usize].take();
-            self.comp_velocity[entity.index() as usize].take();
-            self.comp_acceleration[entity.index() as usize].take();
+            {
+                let exists = self.com_bitset_position.remove(entity.index());
+                self.comp_position[entity.index() as usize].take();
+            }
+            {
+                let exists = self.com_bitset_velocity.remove(entity.index());
+                self.comp_velocity[entity.index() as usize].take();
+            }
+            {
+                let exists = self.com_bitset_acceleration.remove(entity.index());
+                self.comp_acceleration[entity.index() as usize].take();
+            }
+            {
+                let exists = self.com_bitset_enabled.remove(entity.index());
+                self.comp_enabled;
+                if exists {
+                    Some(crate::Enabled::default())
+                } else {
+                    None
+                };
+            }
             true
         } else {
             false
@@ -73,7 +110,7 @@ impl MyEcs {
             "Entity ID is not in the existing range"
         );
         assert!(self.alive.contains(entity.index()), "Entity is not alive");
-        self.com_bitset_position.remove(entity.index());
+        let exists = self.com_bitset_position.remove(entity.index());
         self.comp_position[entity.index() as usize].take()
     }
     #[doc = "Adds the component 'velocity' of type [`crate::Velocity`] to the `entity`"]
@@ -94,7 +131,7 @@ impl MyEcs {
             "Entity ID is not in the existing range"
         );
         assert!(self.alive.contains(entity.index()), "Entity is not alive");
-        self.com_bitset_velocity.remove(entity.index());
+        let exists = self.com_bitset_velocity.remove(entity.index());
         self.comp_velocity[entity.index() as usize].take()
     }
     #[doc = "Adds the component 'acceleration' of type [`crate::Acceleration`] to the `entity`"]
@@ -122,8 +159,34 @@ impl MyEcs {
             "Entity ID is not in the existing range"
         );
         assert!(self.alive.contains(entity.index()), "Entity is not alive");
-        self.com_bitset_acceleration.remove(entity.index());
+        let exists = self.com_bitset_acceleration.remove(entity.index());
         self.comp_acceleration[entity.index() as usize].take()
+    }
+    #[doc = "Adds the component 'enabled' of type [`crate::Enabled`] to the `entity`"]
+    pub fn comp_enabled(&mut self, entity: ::secs::Entity, value: crate::Enabled) -> &mut Self {
+        assert!(
+            (entity.index() as usize) < self.index_,
+            "Entity ID is not in the existing range"
+        );
+        assert!(self.alive.contains(entity.index()), "Entity is not alive");
+        self.com_bitset_enabled.add(entity.index());
+        self.comp_enabled;
+        self
+    }
+    #[doc = "Removes the component 'enabled' of type [`crate::Enabled`] from the `entity`, returns the component if it had it"]
+    pub fn remove_comp_enabled(&mut self, entity: ::secs::Entity) -> Option<crate::Enabled> {
+        assert!(
+            (entity.index() as usize) < self.index_,
+            "Entity ID is not in the existing range"
+        );
+        assert!(self.alive.contains(entity.index()), "Entity is not alive");
+        let exists = self.com_bitset_enabled.remove(entity.index());
+        self.comp_enabled;
+        if exists {
+            Some(crate::Enabled::default())
+        } else {
+            None
+        }
     }
 }
 #[derive(Default)]
@@ -144,9 +207,11 @@ impl MyEcsBuilder {
             comp_position: Vec::new(),
             comp_velocity: Vec::new(),
             comp_acceleration: Vec::new(),
+            comp_enabled: (),
             com_bitset_position: ::secs::hibitset::BitSet::new(),
             com_bitset_velocity: ::secs::hibitset::BitSet::new(),
             com_bitset_acceleration: ::secs::hibitset::BitSet::new(),
+            com_bitset_enabled: ::secs::hibitset::BitSet::new(),
         }
     }
     #[doc = "Builds the builder into the ECS with a capacity"]
@@ -158,9 +223,11 @@ impl MyEcsBuilder {
             comp_position: Vec::with_capacity(capacity),
             comp_velocity: Vec::with_capacity(capacity),
             comp_acceleration: Vec::with_capacity(capacity),
+            comp_enabled: (),
             com_bitset_position: ::secs::hibitset::BitSet::with_capacity(capacity as u32),
             com_bitset_velocity: ::secs::hibitset::BitSet::with_capacity(capacity as u32),
             com_bitset_acceleration: ::secs::hibitset::BitSet::with_capacity(capacity as u32),
+            com_bitset_enabled: ::secs::hibitset::BitSet::with_capacity(capacity as u32),
         }
     }
     #[doc = "Sets the resource 'delta_time' of type [`crate::DeltaTime`]"]

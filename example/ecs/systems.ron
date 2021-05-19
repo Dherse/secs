@@ -27,7 +27,8 @@
 
         signature: [
             Component(Write, "position"),
-            Component(Option(Read), "velocity"),
+            Component(Read, "velocity"),
+            Component(Read, "enabled")
         ],
     )
 ]

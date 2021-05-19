@@ -39,7 +39,7 @@ impl ComponentStorage {
                 quote::quote! { ::std::collections::BTreeMap<::secs::Entity, #path> }
             }
             ComponentStorage::DenseVec => todo!(),
-            ComponentStorage::Null => todo!(),
+            ComponentStorage::Null => quote::quote! { () },
             ComponentStorage::Flagged(_) => todo!(),
         }
     }
@@ -50,7 +50,7 @@ impl ComponentStorage {
             ComponentStorage::HashMap => quote::quote! { ::secs::fxhash::FxHashMap::new() },
             ComponentStorage::BTreeMap => quote::quote! { ::std::collections::BTreeMap::new() },
             ComponentStorage::DenseVec => todo!(),
-            ComponentStorage::Null => todo!(),
+            ComponentStorage::Null => quote::quote! { () },
             ComponentStorage::Flagged(_) => todo!(),
         }
     }
@@ -65,12 +65,19 @@ impl ComponentStorage {
                 quote::quote! { ::std::collections::BTreeMap::new() }
             }
             ComponentStorage::DenseVec => todo!(),
-            ComponentStorage::Null => todo!(),
+            ComponentStorage::Null => quote::quote! { () },
             ComponentStorage::Flagged(_) => todo!(),
         }
     }
 
-    pub fn read_function(&self, id: TokenStream, value: TokenStream, mutable: bool, optional: bool) -> TokenStream {
+    pub fn read_function(
+        &self,
+        component: &Component,
+        id: TokenStream,
+        value: TokenStream,
+        mutable: bool,
+        optional: bool,
+    ) -> TokenStream {
         let out = match self {
             ComponentStorage::Vec => {
                 if mutable {
@@ -87,7 +94,10 @@ impl ComponentStorage {
                 }
             }
             ComponentStorage::DenseVec => todo!(),
-            ComponentStorage::Null => todo!(),
+            ComponentStorage::Null => {
+                let bitset = component.as_bitset();
+                quote::quote! { if self.#bitset.contains(#id.index()) { Some(Default::default()) } else { None } }
+            }
             ComponentStorage::Flagged(_) => todo!(),
         };
 
@@ -105,18 +115,35 @@ impl ComponentStorage {
                 quote::quote! { .insert(#id, #value); }
             }
             ComponentStorage::DenseVec => todo!(),
-            ComponentStorage::Null => todo!(),
+            ComponentStorage::Null => quote::quote! { ; },
             ComponentStorage::Flagged(_) => todo!(),
         }
     }
 
-    pub fn remove_function(&self, id: TokenStream) -> TokenStream {
+    pub fn remove_function(
+        &self,
+        component: &Component,
+        id: TokenStream,
+        exists: TokenStream,
+    ) -> TokenStream {
         match self {
             ComponentStorage::Vec => quote::quote! { [#id.index() as usize].take() },
             ComponentStorage::HashMap | ComponentStorage::BTreeMap => {
                 quote::quote! { .remove(&#id) }
             }
-            ComponentStorage::Flagged(flagged_inner) => flagged_inner.remove_function(id),
+            ComponentStorage::Null => {
+                let ty = component.as_ty();
+                quote::quote! {
+                    ; if #exists {
+                        Some(#ty::default())
+                    } else {
+                        None
+                    }
+                }
+            }
+            ComponentStorage::Flagged(flagged_inner) => {
+                flagged_inner.remove_function(component, id, exists)
+            }
             _ => quote::quote! {},
         }
     }
@@ -153,7 +180,7 @@ impl ComponentStorage {
                 quote::quote! { ::std::collections::BTreeMap<::secs::Entity, #ty> }
             }
             ComponentStorage::DenseVec => quote::quote! { ::secs::DenseVec<#ty> },
-            ComponentStorage::Null => quote::quote! { ::secs::Null<#ty> },
+            ComponentStorage::Null => quote::quote! { () },
             ComponentStorage::Flagged(flagged) => {
                 let flagged_ty = flagged.as_type(ty);
                 quote::quote! { ::secs::Flagged<#flagged_ty> }

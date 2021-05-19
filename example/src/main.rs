@@ -37,7 +37,7 @@ fn main() {
                 y: 0.0,
                 z: 15.5,
             },
-        );
+        ).comp_enabled(entt, Enabled);
     }
 
     for _ in 0..9000 {
@@ -99,10 +99,11 @@ pub struct Position {
     z: f32,
 }
 
-pub fn physics_system(pos: &mut Position, velo: Option<&Velocity>) {
-    if let Some(velo) = velo {
-        pos.x += velo.x;
-        pos.y += velo.y;
-        pos.z += velo.z;
-    }
+#[derive(Clone, Debug, Copy, Default)]
+pub struct Enabled;
+
+pub fn physics_system(pos: &mut Position, velo: &Velocity, _enabled: Enabled) {
+    pos.x += velo.x;
+    pos.y += velo.y;
+    pos.z += velo.z;
 }

@@ -29,4 +29,9 @@
         // The storage type of this component: Vec, HashMap, BTreeMap, DenseVec, Flagged(BaseStorageKind), Null
         storage: Vec,
     ),
+    Component(
+        path: "crate::Enabled",
+        name: "enabled",
+        storage: Null,
+    )
 ]
