@@ -78,6 +78,7 @@ pub fn build(config: Config) -> String {
     let output = format!(
         "{}",
         quote::quote! {
+            #![allow(unused_variables)]
             #output_struct
             #builder
         }
