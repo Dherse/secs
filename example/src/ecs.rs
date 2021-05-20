@@ -20,38 +20,60 @@ impl MyEcs {
     }
     #[doc = "Runs the ECS"]
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        for id in ::secs::hibitset::BitSetAnd(
-            ::secs::hibitset::BitSetAnd(
-                &self.com_bitset_enabled,
-                ::secs::hibitset::BitSetAnd(&self.com_bitset_velocity, &self.com_bitset_position),
-            ),
-            &self.alive,
-        ) {
-            let id = ::secs::Entity::new(id);
-            let sys_physics_comp_position = self
-                .comp_position
-                .get_mut(id.index() as usize)
-                .unwrap()
-                .as_mut()
+        thread_local! { static FUTURES_PHYSICS : :: std :: cell :: RefCell < * mut () > = :: std :: cell :: RefCell :: new (:: std :: ptr :: null_mut ()) ; }
+        FUTURES_PHYSICS.with(|f| {
+            use secs::hibitset::BitSetLike;
+            let mut futures = unsafe {
+                if f.borrow().is_null() {
+                    let value = Box::leak(Box::new(Vec::new()));
+                    *f.borrow_mut() = value as *mut _ as *mut ();
+                    value
+                } else {
+                    &mut *(*f.borrow() as *mut Vec<_>)
+                }
+            };
+            let this = self as *mut Self;
+            let iter = ::secs::hibitset::BitSetAnd(
+                ::secs::hibitset::BitSetAnd(
+                    &self.com_bitset_enabled,
+                    ::secs::hibitset::BitSetAnd(
+                        &self.com_bitset_velocity,
+                        &self.com_bitset_position,
+                    ),
+                ),
+                &self.alive,
+            )
+            .iter()
+            .map(|id| {
+                let id = ::secs::Entity::new(id);
+                let this = unsafe { &mut *this };
+                let sys_physics_comp_position = this
+                    .comp_position
+                    .get_mut(id.index() as usize)
+                    .unwrap()
+                    .as_mut()
+                    .unwrap();
+                let sys_physics_comp_velocity = this
+                    .comp_velocity
+                    .get(id.index() as usize)
+                    .unwrap()
+                    .as_ref()
+                    .unwrap();
+                let sys_physics_comp_enabled = if self.com_bitset_enabled.contains(id.index()) {
+                    Some(Default::default())
+                } else {
+                    None
+                }
                 .unwrap();
-            let sys_physics_comp_velocity = self
-                .comp_velocity
-                .get(id.index() as usize)
-                .unwrap()
-                .as_ref()
-                .unwrap();
-            let sys_physics_comp_enabled = if self.com_bitset_enabled.contains(id.index()) {
-                Some(Default::default())
-            } else {
-                None
-            }
-            .unwrap();
-            crate::physics_system(
-                sys_physics_comp_position,
-                sys_physics_comp_velocity,
-                sys_physics_comp_enabled,
-            );
-        }
+                crate::physics_system(
+                    sys_physics_comp_position,
+                    sys_physics_comp_velocity,
+                    sys_physics_comp_enabled,
+                )
+            });
+            ::secs::executor::run_all(iter, &mut futures);
+            futures.clear();
+        });
         Ok(())
     }
     #[doc = "Creates a new entity"]

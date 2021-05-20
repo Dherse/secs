@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
 use serde::{Deserialize, Serialize};
@@ -161,13 +163,19 @@ pub enum Element {
 impl Element {
     pub fn init(
         &self,
+        this: TokenStream,
         id: TokenStream,
         components: &[Component],
         resources: &[Resource],
-        system: &System,
+        system: &System, is_async: bool
     ) -> TokenStream {
         match self {
             Element::State(accessor) => {
+                // Bypass if we're in async
+                if is_async {
+                    return quote::quote! {};
+                }
+
                 let name = Ident::new(
                     &format!("sys_{}_state", system.name).to_case(Case::Snake),
                     Span::call_site(),
@@ -175,7 +183,7 @@ impl Element {
                 let state_name = system.as_ident();
                 let init = accessor.wrapper_init(
                     quote::quote! {
-                        self.#state_name
+                        #this.#state_name
                     },
                     true,
                 );
@@ -183,6 +191,11 @@ impl Element {
                 quote::quote! { let #name = #init; }
             }
             Element::Resource(accessor, name) => {
+                // Bypass if we're in async
+                if is_async && accessor.is_mut() {
+                    return quote::quote! {};
+                }
+
                 let resource = find_resource(resources, name);
                 let name = Ident::new(
                     &format!("sys_{}_res_{}", system.name, name).to_case(Case::Snake),
@@ -191,7 +204,7 @@ impl Element {
                 let state_name = resource.as_field_ident();
                 let init = accessor.wrapper_init(
                     quote::quote! {
-                        self.#state_name
+                        #this.#state_name
                     },
                     true,
                 );
@@ -209,7 +222,7 @@ impl Element {
                     component.storage.read_function(
                         component,
                         id,
-                        quote::quote! { self.#field_name },
+                        quote::quote! { #this.#field_name },
                         accessor.is_mut(),
                         accessor.is_opt(),
                     ),
@@ -234,7 +247,7 @@ impl Element {
                     Span::call_site(),
                 );
 
-                quote::quote! {#name }
+                quote::quote! { #name }
             }
             Element::Component(_, name) => {
                 let name = Ident::new(
@@ -290,37 +303,71 @@ impl SystemKind {
         components: &[Component],
         resources: &[Resource],
     ) -> TokenStream {
-        match self {
-            SystemKind::ForEachFunction => {
-                let function: TokenStream =
-                    syn::parse_str(&system.path).expect("Failed parsing function path");
+        let function: TokenStream =
+            syn::parse_str(&system.path).expect("Failed parsing function path");
 
-                let mut comp_iter = quote::quote! {};
-                let mut first: bool = true;
-                for element in &system.signature {
-                    if let Element::Component(accessor, name) = element {
-                        if accessor.is_opt() {
-                            continue;
-                        }
+        // Ensuring there are no references twice
+        {
+            let mut components = HashSet::<String>::new();
+            let mut resources = HashSet::<String>::new();
+            let mut state = false;
+            let mut command_buffer = false;
+            for element in &system.signature {
+                match element {
+                    Element::State(_) => if state {
+                        panic!("System {} asks for state twice", system.name);
+                    } else {
+                        state = true;
+                    },
+                    Element::Component(_, name) => if components.contains(name) {
+                        panic!("System {} asks for component {} more than once", system.name, name);
+                    } else {
+                        components.insert(name.clone());
+                    },
+                    Element::Resource(_, name) => if resources.contains(name) {
+                        panic!("System {} asks for resource {} more than once", system.name, name);
+                    } else {
+                        resources.insert(name.clone());
+                    },
+                    Element::CommandBuffer => if command_buffer {
+                        panic!("System {} asks for move than one command buffer", system.name);
+                    } else {
+                        command_buffer = true;
+                    },
+                    Element::Entity => {},
+                    Element::Const(_) => {}
+                }
+            }
+        }
 
-                        let component = find_component(components, name);
-                        let bitset = component.as_bitset();
-                        let new_comp = quote::quote! {
-                            &self.#bitset
-                        };
-
-                        if first {
-                            comp_iter = new_comp;
-                        } else {
-                            comp_iter =
-                                quote::quote! { ::secs::hibitset::BitSetAnd(#new_comp, #comp_iter)};
-                        }
-                        first = false;
-                    }
+        let mut comp_iter = quote::quote! {};
+        let mut first: bool = true;
+        for element in &system.signature {
+            if let Element::Component(accessor, name) = element {
+                if accessor.is_opt() {
+                    continue;
                 }
 
-                comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#comp_iter, &self.alive) };
+                let component = find_component(components, name);
+                let bitset = component.as_bitset();
+                let new_comp = quote::quote! {
+                    &self.#bitset
+                };
 
+                if first {
+                    comp_iter = new_comp;
+                } else {
+                    comp_iter =
+                        quote::quote! { ::secs::hibitset::BitSetAnd(#new_comp, #comp_iter)};
+                }
+                first = false;
+            }
+        }
+
+        comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#comp_iter, &self.alive) };
+
+        match self {
+            SystemKind::ForEachFunction => {
                 let flag = if system.result {
                     quote::quote! { ? }
                 } else {
@@ -336,7 +383,7 @@ impl SystemKind {
                 let inits = system
                     .signature
                     .iter()
-                    .map(|elem| elem.init(quote::quote! { id }, components, resources, system));
+                    .map(|elem| elem.init(quote::quote!{ self }, quote::quote! { id }, components, resources, system, false));
 
                 let refs = system.signature.iter().map(|elem| elem.getter(system));
 
@@ -351,9 +398,60 @@ impl SystemKind {
                     }
                 }
             }
-            SystemKind::AsyncFunction => todo!(),
+            SystemKind::ForEachAsyncFunction => {
+                let futures = Ident::new(&format!("futures_{}", system.name).to_case(Case::ScreamingSnake), Span::call_site());
+                let function: TokenStream = syn::parse_str(&system.path).expect("Failed to parse function path");
+
+                let inits = system
+                    .signature
+                    .iter()
+                    .map(|elem| elem.init(quote::quote!{ this }, quote::quote! { id }, components, resources, system, true));
+
+                let refs = system.signature.iter().map(|elem| {
+                    elem.getter(system)
+                });
+
+                quote::quote! {
+                    thread_local! {
+                        static #futures: ::std::cell::RefCell<*mut ()> = ::std::cell::RefCell::new(::std::ptr::null_mut());
+                    }
+
+                    #futures.with(|f| {
+                        use secs::hibitset::BitSetLike;
+
+                        let mut futures = unsafe {
+                            if f.borrow().is_null() {
+                                let value = Box::leak(Box::new(Vec::new()));
+                                *f.borrow_mut() = value as *mut _ as *mut ();
+                                value
+                            } else {
+                                &mut *(*f.borrow() as *mut Vec<_>)
+                            }
+                        };
+
+                        let this = self as *mut Self;
+
+                        let iter = #comp_iter.iter().map(|id| {
+                            let id = ::secs::Entity::new(id);
+                            let this = unsafe { &mut *this };
+                            #(#inits;)*
+    
+                            #function(
+                                #(#refs,)*
+                            )
+                        });
+
+                        ::secs::executor::run_all(iter, &mut futures);
+
+                        futures.clear();
+                    });
+
+
+                    
+                }
+            },
             SystemKind::Function => todo!(),
-            SystemKind::ForEachAsyncFunction => todo!(),
+            SystemKind::AsyncFunction => todo!(),
         }
     }
 }

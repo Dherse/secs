@@ -10,7 +10,7 @@
         // The type of system it is: Function, AsyncFunction, ForEachFunction, ForEachAsyncFunction
         // Foreach types will receive reference (mutable or not) to the underlying data.
         // Other will receive iterators over the data that allows joining by the entity ID with the others
-        kind: ForEachFunction,
+        kind: ForEachAsyncFunction,
 
         // Allows for each functions to control the flow, that means they can stop the execution at any time.
         // This allows a system to "break" the overlying iterator.
