@@ -1,7 +1,6 @@
 use std::{future::Future, pin::Pin, task::Context, thread};
 use waker_fn::waker_fn;
 
-
 /// Runs all of the futures in the `iterator` using `futures` as
 /// a temporary work buffer
 pub fn run_all<I, F>(iterator: I, futures: &mut Vec<F>)
@@ -40,7 +39,7 @@ where
 fn poll_one<F>(future: &mut F, cx: &mut Context) -> bool
 where
     F: Future,
-{   
+{
     // TODO: remove this usage to unsafe
     let pin = unsafe { Pin::new_unchecked(future) };
 

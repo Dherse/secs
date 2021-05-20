@@ -12,45 +12,32 @@ fn main() {
     println!("ECS initialized");
 
     for _ in 0..1000 {
-        let entt = ecs.push();
-
-        ecs.comp_acceleration(
-            entt,
-            Acceleration {
-                x: 0.0,
-                y: -9.81,
-                z: 0.0,
-            },
-        )
-        .comp_position(
-            entt,
-            Position {
-                x: 0.0,
-                y: 50.0,
-                z: 0.0,
-            },
-        )
-        .comp_velocity(
-            entt,
-            Velocity {
-                x: 50.0,
-                y: 0.0,
-                z: 15.5,
-            },
-        ).comp_enabled(entt, Enabled);
+        ecs.build(
+            ecs.next()
+                .acceleration(Acceleration {
+                    x: 0.0,
+                    y: -9.81,
+                    z: 0.0,
+                })
+                .position(Position {
+                    x: 0.0,
+                    y: 50.0,
+                    z: 0.0,
+                })
+                .velocity(Velocity {
+                    x: 50.0,
+                    y: 0.0,
+                    z: 15.5,
+                }),
+        );
     }
 
     for _ in 0..9000 {
-        let entt = ecs.push();
-
-        ecs.comp_position(
-            entt,
-            Position {
-                x: 0.0,
-                y: -9.81,
-                z: 0.0,
-            },
-        );
+        ecs.build(ecs.next().position(Position {
+            x: 0.0,
+            y: -9.81,
+            z: 0.0,
+        }));
     }
 
     println!("Data generated");
@@ -102,7 +89,7 @@ pub struct Position {
 #[derive(Clone, Debug, Copy, Default)]
 pub struct Enabled;
 
-pub async fn physics_system(pos: &mut Position, velo: &Velocity, _enabled: Enabled) {
+pub fn physics_system(pos: &mut Position, velo: &Velocity) {
     pos.x += velo.x;
     pos.y += velo.y;
     pos.z += velo.z;

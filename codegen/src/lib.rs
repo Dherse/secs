@@ -7,15 +7,20 @@ use std::{
 };
 
 use config::Config;
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::TokenStream;
 use serde::Deserialize;
 
-use crate::{component::Component, ecs::ECS, resource::Resource, system::System};
+use crate::{
+    component::Component, ecs::ECS, entity::make_entity_builder, resource::Resource,
+    store::make_component_store, system::System,
+};
 
 pub mod component;
 pub mod config;
 pub mod ecs;
+pub mod entity;
 pub mod resource;
+pub mod store;
 pub mod system;
 
 pub fn build(config: Config) -> String {
@@ -72,7 +77,9 @@ pub fn build(config: Config) -> String {
     }
 
     let output_struct = make_struct(&main, &components, &resources, &systems);
-    let builder = make_builder(&main, &components, &resources, &systems);
+    let builder = make_builder(&main, &resources, &systems);
+    let component_store = make_component_store(&main, &components);
+    let entity_builder = make_entity_builder(&main, &components);
 
     let output = format!(
         "{}",
@@ -80,6 +87,8 @@ pub fn build(config: Config) -> String {
             #![allow(unused_variables)]
             #output_struct
             #builder
+            #component_store
+            #entity_builder
         }
     );
 
@@ -99,12 +108,6 @@ fn make_struct(
     let name = main.as_ident();
     let builder_name = main.as_builder_ident();
 
-    let component_types: Vec<TokenStream> =
-        components.iter().map(Component::as_struct_field).collect();
-
-    let component_bitsets: Vec<TokenStream> =
-        components.iter().map(Component::as_struct_bitset).collect();
-
     let resource_types: Vec<TokenStream> =
         resources.iter().map(Resource::as_struct_field).collect();
 
@@ -113,11 +116,6 @@ fn make_struct(
         .map(System::as_struct_field)
         .filter_map(|v| v)
         .collect();
-
-    let derives = main
-        .derive
-        .iter()
-        .map(|derive| Ident::new(derive, Span::call_site()));
 
     let err_ty: TokenStream = syn::parse_str(
         &main
@@ -129,70 +127,14 @@ fn make_struct(
 
     let system_runs = systems
         .iter()
-        .map(|sys| sys.kind.make_run(sys, components, resources));
+        .map(|sys| sys.kind.make_run(main, sys, components, resources));
 
-    let component_fns = components.iter().map(|comp| {
-        let name = comp.as_ident();
-        let del_name = comp.as_del_ident();
-        let bitset_name = comp.as_bitset();
-        let ty = comp.as_ty();
-
-        let doc_str_add = format!("Adds the component '{}' of type [`{}`] to the `entity`", comp.name, comp.path);
-        let doc_str_del = format!("Removes the component '{}' of type [`{}`] from the `entity`, returns the component if it had it", comp.name, comp.path);
-
-        let set_call = comp.storage.write_function(quote::quote! { entity }, quote::quote! { value });
-        let del_call = comp.storage.remove_function(comp, quote::quote! { entity }, quote::quote! { exists });
-
-        quote::quote! {
-            #[doc = #doc_str_add]
-            pub fn #name(&mut self, entity: ::secs::Entity, value: #ty) -> &mut Self {
-                assert!((entity.index() as usize) < self.index_, "Entity ID is not in the existing range");
-                assert!(self.alive.contains(entity.index()), "Entity is not alive");
-
-                self.#bitset_name.add(entity.index());
-                self.#name#set_call
-                self
-            }
-
-            #[doc = #doc_str_del]
-            pub fn #del_name(&mut self, entity: ::secs::Entity) -> Option<#ty> {
-                assert!((entity.index() as usize) < self.index_, "Entity ID is not in the existing range");
-                assert!(self.alive.contains(entity.index()), "Entity is not alive");
-
-                let exists = self.#bitset_name.remove(entity.index());
-                self.#name#del_call
-            }
-        }
-    });
-
-    let push_calls = components.iter().map(|comp| {
-        let name = comp.as_ident();
-        comp.storage
-            .alloc_function(quote::quote! { self.#name }, quote::quote! { entity })
-    });
-
-    let delete_calls = components.iter().map(|comp| {
-        let bitset = comp.as_bitset();
-        let delete =
-            comp.storage
-                .remove_function(comp, quote::quote! { entity }, quote::quote! { exists });
-        let name = comp.as_ident();
-
-        quote::quote! {
-            {
-                let exists = self.#bitset.remove(entity.index());
-                self.#name#delete;
-            }
-        }
-    });
+    let component_store = main.as_component_store_ident();
+    let entity_builder = main.as_entity_builder_ident();
 
     quote::quote! {
-        #[derive(#(#derives),*)]
         pub struct #name {
-            index_: usize,
-            alive: ::secs::hibitset::BitSet,
-            #(#component_types,)*
-            #(#component_bitsets,)*
+            components: #component_store,
             #(#resource_types,)*
             #(#system_state_types,)*
         }
@@ -205,78 +147,39 @@ fn make_struct(
 
             #[doc = "Runs the ECS"]
             pub fn run(&mut self) -> Result<(), #err_ty> {
+                let components = &mut self.components;
+
                 #(#system_runs)*
 
                 Ok(())
             }
 
-            #[doc = "Creates a new entity"]
-            pub fn push(&mut self) -> ::secs::Entity {
-                let entity = ::secs::Entity::new(self.index_ as u32);
-                self.alive.add(self.index_ as u32);
-                self.index_ += 1;
-
-                #(#push_calls)*
-
-                entity
+            #[doc = "Returns a new entity builder"]
+            pub fn next(&self) -> #entity_builder {
+                #entity_builder::new(self.components.next())
             }
 
-            #[doc = "Deletes an entity, returns true if this entity was alive"]
-            pub fn delete(&mut self, entity: ::secs::Entity) -> bool {
-                if self.alive.remove(entity.index()) {
-                    #(#delete_calls)*
-
-                    true
-                } else {
-                    false
-                }
+            pub fn build(&mut self, builder: #entity_builder) {
+                self.components.build(builder);
             }
 
-            #(#component_fns)*
+            #[doc = "Gets an immutable reference to the component store"]
+            pub fn components(&self) -> &#component_store {
+                &self.components
+            }
+
+            #[doc = "Gets a mutable reference to the component store"]
+            pub fn components_mut(&mut self) -> &mut #component_store {
+                &mut self.components
+            }
         }
     }
 }
 
-fn make_builder(
-    main: &ECS,
-    components: &[Component],
-    resources: &[Resource],
-    systems: &[System],
-) -> TokenStream {
+fn make_builder(main: &ECS, resources: &[Resource], systems: &[System]) -> TokenStream {
     let ecs_name = main.as_ident();
     let name = main.as_builder_ident();
-
-    let comp_set = components.iter().map(|comp| {
-        let name = comp.as_ident();
-        let call = comp.storage.storage_init();
-        quote::quote! {
-            #name: #call
-        }
-    });
-
-    let comp_set_with_cap = components.iter().map(|comp| {
-        let name = comp.as_ident();
-        let call = comp
-            .storage
-            .storage_init_with_capacity(quote::quote! {capacity});
-        quote::quote! {
-            #name: #call
-        }
-    });
-
-    let comp_bitset = components.iter().map(|comp| {
-        let name = comp.as_bitset();
-        quote::quote! {
-            #name: ::secs::hibitset::BitSet::new()
-        }
-    });
-
-    let comp_bitset_with_cap = components.iter().map(|comp| {
-        let name = comp.as_bitset();
-        quote::quote! {
-            #name: ::secs::hibitset::BitSet::with_capacity(capacity as u32)
-        }
-    });
+    let store = main.as_component_store_ident();
 
     let resource_types: Vec<TokenStream> =
         resources.iter().map(Resource::as_builder_field).collect();
@@ -377,24 +280,18 @@ fn make_builder(
             #[doc = "Builds the builder into the ECS"]
             pub fn build(self) -> #ecs_name {
                 #ecs_name {
-                    alive: ::secs::hibitset::BitSet::new(),
-                    index_: 0,
+                    components: #store::new(),
                     #(#res_set,)*
                     #(#state_set,)*
-                    #(#comp_set,)*
-                    #(#comp_bitset,)*
                 }
             }
 
             #[doc = "Builds the builder into the ECS with a capacity"]
             pub fn with_capacity(self, capacity: usize) -> #ecs_name {
                 #ecs_name {
-                    alive: ::secs::hibitset::BitSet::with_capacity(capacity as u32),
-                    index_: 0,
+                    components: #store::with_capacity(capacity),
                     #(#res_set,)*
                     #(#state_set,)*
-                    #(#comp_set_with_cap,)*
-                    #(#comp_bitset_with_cap,)*
                 }
             }
 

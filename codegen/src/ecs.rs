@@ -7,11 +7,6 @@ pub struct ECS {
     /// The path of the output data structure
     pub name: String,
 
-    /// Traits to derive on the ECS, note that every
-    /// component, states and resources must also
-    /// implement these traits
-    pub derive: Vec<String>,
-
     /// The error type, if none, default to `Box<dyn Error>`
     pub error: Option<String>,
 
@@ -31,7 +26,21 @@ impl ECS {
 
     pub fn as_builder_ident(&self) -> Ident {
         Ident::new(
-            &format!("{}Builder", self.name.to_case(Case::UpperCamel)),
+            &format!("{}Builder", self.name).to_case(Case::UpperCamel),
+            Span::call_site(),
+        )
+    }
+
+    pub fn as_component_store_ident(&self) -> Ident {
+        Ident::new(
+            &format!("{}ComponentStore", self.name).to_case(Case::UpperCamel),
+            Span::call_site(),
+        )
+    }
+
+    pub fn as_entity_builder_ident(&self) -> Ident {
+        Ident::new(
+            &format!("{}EntityBuilder", self.name).to_case(Case::UpperCamel),
             Span::call_site(),
         )
     }

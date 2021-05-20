@@ -73,6 +73,7 @@ impl ComponentStorage {
         &self,
         component: &Component,
         id: TokenStream,
+        store: TokenStream,
         value: TokenStream,
         mutable: bool,
         optional: bool,
@@ -95,7 +96,7 @@ impl ComponentStorage {
             ComponentStorage::DenseVec => todo!(),
             ComponentStorage::Null => {
                 let bitset = component.as_bitset();
-                quote::quote! { if self.#bitset.contains(#id.index()) { Some(Default::default()) } else { None } }
+                quote::quote! { if #store.#bitset.contains(#id.index()) { Some(Default::default()) } else { None } }
             }
             ComponentStorage::Flagged(_) => todo!(),
         };
@@ -107,14 +108,20 @@ impl ComponentStorage {
         }
     }
 
-    pub fn write_function(&self, id: TokenStream, value: TokenStream) -> TokenStream {
+    pub fn write_function(&self, path: TokenStream, id: TokenStream, value: TokenStream) -> TokenStream {
         match self {
-            ComponentStorage::Vec => quote::quote! { [#id.index() as usize] = Some(#value); },
+            ComponentStorage::Vec => quote::quote! { 
+                if #path.len() <= #id.index() as usize {
+                    #path.resize(#id.index() as usize + 1, None);
+                }
+
+                #path[#id.index() as usize] = Some(#value);
+            },
             ComponentStorage::HashMap | ComponentStorage::BTreeMap => {
-                quote::quote! { .insert(#id, #value); }
+                quote::quote! { #path.insert(#id, #value); }
             }
+            ComponentStorage::Null => quote::quote! { },
             ComponentStorage::DenseVec => todo!(),
-            ComponentStorage::Null => quote::quote! { ; },
             ComponentStorage::Flagged(_) => todo!(),
         }
     }
@@ -147,11 +154,32 @@ impl ComponentStorage {
         }
     }
 
-    pub fn alloc_function(&self, caller: TokenStream, id: TokenStream) -> TokenStream {
+    pub fn clear_function(
+        &self,
+        caller: TokenStream,
+        bitset: TokenStream,
+        id: TokenStream,
+    ) -> TokenStream {
         match self {
-            ComponentStorage::Vec => quote::quote! { #caller.push(None); },
-            ComponentStorage::Flagged(flagged_inner) => flagged_inner.alloc_function(caller, id),
-            _ => quote::quote! {},
+            ComponentStorage::Vec => quote::quote! {
+                if (#id.index() as usize) <= #caller.len() {
+                    #caller[#id.index() as usize] = None;
+                    #bitset.remove(#id.index());
+                } else {
+                    #caller.resize(#id.index() as usize + 1, None)
+                }
+            },
+            ComponentStorage::BTreeMap | ComponentStorage::HashMap => quote::quote! {
+                #caller.remove(&#id);
+                #bitset.remove(#id.index());
+            },
+            ComponentStorage::Null => quote::quote! {
+                #bitset.remove(#id.index());
+            },
+            ComponentStorage::Flagged(flagged_inner) => {
+                flagged_inner.clear_function(caller, bitset, id)
+            }
+            ComponentStorage::DenseVec => todo!(),
         }
     }
 }
@@ -208,19 +236,35 @@ impl ComponentStorage {
 
 impl Component {
     pub fn as_field_name(&self) -> String {
-        format!("comp_{}", self.name.to_case(Case::Snake))
+        format!("{}", self.name).to_case(Case::Snake)
+    }
+
+    pub fn as_mut_name(&self) -> String {
+        format!("{}_mut", self.name).to_case(Case::Snake)
     }
 
     pub fn as_bitset_name(&self) -> String {
-        format!("com_bitset_{}", self.name.to_case(Case::Snake))
+        format!("bitset_{}_", self.name).to_case(Case::Snake)
     }
 
     pub fn as_del_name(&self) -> String {
-        format!("remove_comp_{}", self.name.to_case(Case::Snake))
+        format!("del_{}", self.name).to_case(Case::Snake)
+    }
+
+    pub fn as_add_name(&self) -> String {
+        format!("add_{}", self.name).to_case(Case::Snake)
     }
 
     pub fn as_ident(&self) -> Ident {
         Ident::new(&self.as_field_name(), Span::call_site())
+    }
+
+    pub fn as_mut(&self) -> Ident {
+        Ident::new(&self.as_mut_name(), Span::call_site())
+    }
+
+    pub fn as_add_ident(&self) -> Ident {
+        Ident::new(&self.as_add_name(), Span::call_site())
     }
 
     pub fn as_del_ident(&self) -> Ident {

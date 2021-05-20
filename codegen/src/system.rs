@@ -4,7 +4,7 @@ use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
 use serde::{Deserialize, Serialize};
 
-use crate::{component::Component, find_component, find_resource, resource::Resource};
+use crate::{component::Component, ecs::ECS, find_component, find_resource, resource::Resource};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct System {
@@ -167,7 +167,8 @@ impl Element {
         id: TokenStream,
         components: &[Component],
         resources: &[Resource],
-        system: &System, is_async: bool
+        system: &System,
+        is_async: bool,
     ) -> TokenStream {
         match self {
             Element::State(accessor) => {
@@ -222,6 +223,7 @@ impl Element {
                     component.storage.read_function(
                         component,
                         id,
+                        quote::quote! { #this },
                         quote::quote! { #this.#field_name },
                         accessor.is_mut(),
                         accessor.is_opt(),
@@ -299,6 +301,7 @@ pub enum SystemKind {
 impl SystemKind {
     pub fn make_run(
         &self,
+        main: &ECS,
         system: &System,
         components: &[Component],
         resources: &[Resource],
@@ -314,27 +317,44 @@ impl SystemKind {
             let mut command_buffer = false;
             for element in &system.signature {
                 match element {
-                    Element::State(_) => if state {
-                        panic!("System {} asks for state twice", system.name);
-                    } else {
-                        state = true;
-                    },
-                    Element::Component(_, name) => if components.contains(name) {
-                        panic!("System {} asks for component {} more than once", system.name, name);
-                    } else {
-                        components.insert(name.clone());
-                    },
-                    Element::Resource(_, name) => if resources.contains(name) {
-                        panic!("System {} asks for resource {} more than once", system.name, name);
-                    } else {
-                        resources.insert(name.clone());
-                    },
-                    Element::CommandBuffer => if command_buffer {
-                        panic!("System {} asks for move than one command buffer", system.name);
-                    } else {
-                        command_buffer = true;
-                    },
-                    Element::Entity => {},
+                    Element::State(_) => {
+                        if state {
+                            panic!("System {} asks for state twice", system.name);
+                        } else {
+                            state = true;
+                        }
+                    }
+                    Element::Component(_, name) => {
+                        if components.contains(name) {
+                            panic!(
+                                "System {} asks for component {} more than once",
+                                system.name, name
+                            );
+                        } else {
+                            components.insert(name.clone());
+                        }
+                    }
+                    Element::Resource(_, name) => {
+                        if resources.contains(name) {
+                            panic!(
+                                "System {} asks for resource {} more than once",
+                                system.name, name
+                            );
+                        } else {
+                            resources.insert(name.clone());
+                        }
+                    }
+                    Element::CommandBuffer => {
+                        if command_buffer {
+                            panic!(
+                                "System {} asks for move than one command buffer",
+                                system.name
+                            );
+                        } else {
+                            command_buffer = true;
+                        }
+                    }
+                    Element::Entity => {}
                     Element::Const(_) => {}
                 }
             }
@@ -351,20 +371,19 @@ impl SystemKind {
                 let component = find_component(components, name);
                 let bitset = component.as_bitset();
                 let new_comp = quote::quote! {
-                    &self.#bitset
+                    &components.#bitset
                 };
 
                 if first {
                     comp_iter = new_comp;
                 } else {
-                    comp_iter =
-                        quote::quote! { ::secs::hibitset::BitSetAnd(#new_comp, #comp_iter)};
+                    comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#new_comp, #comp_iter)};
                 }
                 first = false;
             }
         }
 
-        comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#comp_iter, &self.alive) };
+        comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#comp_iter, &components.alive) };
 
         match self {
             SystemKind::ForEachFunction => {
@@ -380,10 +399,16 @@ impl SystemKind {
                     (quote::quote! {}, quote::quote! {;})
                 };
 
-                let inits = system
-                    .signature
-                    .iter()
-                    .map(|elem| elem.init(quote::quote!{ self }, quote::quote! { id }, components, resources, system, false));
+                let inits = system.signature.iter().map(|elem| {
+                    elem.init(
+                        quote::quote! { components },
+                        quote::quote! { id },
+                        components,
+                        resources,
+                        system,
+                        false,
+                    )
+                });
 
                 let refs = system.signature.iter().map(|elem| elem.getter(system));
 
@@ -399,17 +424,26 @@ impl SystemKind {
                 }
             }
             SystemKind::ForEachAsyncFunction => {
-                let futures = Ident::new(&format!("futures_{}", system.name).to_case(Case::ScreamingSnake), Span::call_site());
-                let function: TokenStream = syn::parse_str(&system.path).expect("Failed to parse function path");
+                let store = main.as_component_store_ident();
+                let futures = Ident::new(
+                    &format!("futures_{}", system.name).to_case(Case::ScreamingSnake),
+                    Span::call_site(),
+                );
+                let function: TokenStream =
+                    syn::parse_str(&system.path).expect("Failed to parse function path");
 
-                let inits = system
-                    .signature
-                    .iter()
-                    .map(|elem| elem.init(quote::quote!{ this }, quote::quote! { id }, components, resources, system, true));
-
-                let refs = system.signature.iter().map(|elem| {
-                    elem.getter(system)
+                let inits = system.signature.iter().map(|elem| {
+                    elem.init(
+                        quote::quote! { this },
+                        quote::quote! { id },
+                        components,
+                        resources,
+                        system,
+                        true,
+                    )
                 });
+
+                let refs = system.signature.iter().map(|elem| elem.getter(system));
 
                 quote::quote! {
                     thread_local! {
@@ -429,13 +463,13 @@ impl SystemKind {
                             }
                         };
 
-                        let this = self as *mut Self;
+                        let this = components as *mut #store;
 
                         let iter = #comp_iter.iter().map(|id| {
                             let id = ::secs::Entity::new(id);
                             let this = unsafe { &mut *this };
                             #(#inits;)*
-    
+
                             #function(
                                 #(#refs,)*
                             )
@@ -447,9 +481,9 @@ impl SystemKind {
                     });
 
 
-                    
+
                 }
-            },
+            }
             SystemKind::Function => todo!(),
             SystemKind::AsyncFunction => todo!(),
         }
