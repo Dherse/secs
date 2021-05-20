@@ -63,23 +63,6 @@ impl System {
             #name: Option<#ty>
         })
     }
-
-    pub fn as_field_ref(&self, mutable: bool) -> Option<TokenStream> {
-        if self.state.is_none() {
-            None
-        } else {
-            let name = self.as_ident();
-            Some(if mutable {
-                quote::quote! {
-                    &mut self.#name,
-                }
-            } else {
-                quote::quote! {
-                    &self.#name,
-                }
-            })
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,7 +148,6 @@ impl Element {
         &self,
         this: TokenStream,
         id: TokenStream,
-        main: &ECS,
         components: &[Component],
         resources: &[Resource],
         system: &System,
@@ -406,7 +388,6 @@ impl SystemKind {
                     elem.init(
                         quote::quote! { components },
                         quote::quote! { id },
-                        main,
                         components,
                         resources,
                         system,
@@ -440,7 +421,6 @@ impl SystemKind {
                     elem.init(
                         quote::quote! { this },
                         quote::quote! { id },
-                        main,
                         components,
                         resources,
                         system,

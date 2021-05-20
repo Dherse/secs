@@ -69,15 +69,15 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
 
     let delete_calls = components.iter().map(|comp| {
         let bitset = comp.as_bitset();
+        let name = comp.as_ident();
         let delete =
             comp.storage
-                .remove_function(comp, quote::quote! { entity }, quote::quote! { exists });
-        let name = comp.as_ident();
+                .remove_function(comp, quote::quote! { self.#name }, quote::quote! { entity }, quote::quote! { exists });
 
         quote::quote! {
             {
                 let exists = self.#bitset.remove(entity.index());
-                self.#name#delete;
+                #delete;
             }
         }
     });
@@ -88,6 +88,7 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
 
         let delete = comp.storage.remove_function(
             comp,
+            quote::quote!{ self.#name },
             quote::quote! { builder.entity },
             quote::quote! { exists },
         );
@@ -105,7 +106,7 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
             } else {
                 let exists = self.#bitset.remove(builder.entity.index());
                 if exists {
-                    self.#name#delete;
+                    #delete;
                 }
             }
         }
@@ -121,6 +122,12 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
             alive: ::secs::hibitset::BitSet,
             #(#component_types,)*
             #(#component_bitsets,)*
+        }
+
+        impl Default for #component_store {
+            fn default() -> Self {
+                Self::new()
+            }
         }
 
         impl #component_store {
@@ -204,7 +211,7 @@ fn make_setters(comp: &Component) -> TokenStream {
     );
     let del_call =
         comp.storage
-            .remove_function(comp, quote::quote! { entity }, quote::quote! { exists });
+            .remove_function(comp, quote::quote! { self.#name }, quote::quote! { entity }, quote::quote! { exists });
     let doc_str_add = format!(
         "Adds the component '{}' of type [`{}`] to the `entity`",
         comp.name, comp.path
@@ -227,7 +234,7 @@ fn make_setters(comp: &Component) -> TokenStream {
 
             let exists = self.#bitset_name.remove(entity.index());
             if exists {
-                self.#name#del_call
+                #del_call
             } else {
                 None
             }

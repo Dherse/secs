@@ -1,10 +1,4 @@
-use std::{
-    collections::HashMap,
-    fs::File,
-    io::{self, Read, Write},
-    path::PathBuf,
-    process::{Command, Stdio},
-};
+use std::{collections::HashMap, fs::File, io::{self, Read, Write}, path::Path, process::{Command, Stdio}};
 
 use config::Config;
 use proc_macro2::TokenStream;
@@ -98,14 +92,14 @@ fn make_struct(
     let system_state_types: Vec<TokenStream> = systems
         .iter()
         .map(System::as_struct_field)
-        .filter_map(|v| v)
+        .flatten()
         .collect();
 
     let err_ty: TokenStream = syn::parse_str(
         &main
             .error
             .clone()
-            .unwrap_or("Box<dyn std::error::Error>".to_owned()),
+            .unwrap_or_else(|| "Box<dyn std::error::Error>".to_owned()),
     )
     .expect("Failed to parse error type");
 
@@ -199,7 +193,7 @@ fn make_builder(main: &ECS, resources: &[Resource], systems: &[System]) -> Token
     let system_state_types: Vec<TokenStream> = systems
         .iter()
         .map(System::as_builder_field)
-        .filter_map(|v| v)
+        .flatten()
         .collect();
 
     let res_functions: Vec<TokenStream> = resources
@@ -318,7 +312,7 @@ fn make_builder(main: &ECS, resources: &[Resource], systems: &[System]) -> Token
     }
 }
 
-fn load<O: for<'de> Deserialize<'de>>(config: &Config, path: &PathBuf) -> Result<O, io::Error> {
+fn load<O: for<'de> Deserialize<'de>>(config: &Config, path: &Path) -> Result<O, io::Error> {
     if config.cargo_control {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -345,8 +339,6 @@ fn run_rustfmt(source: String) -> Result<String, io::Error> {
     let mut child = cmd.spawn()?;
     let mut child_stdin = child.stdin.take().unwrap();
     let mut child_stdout = child.stdout.take().unwrap();
-
-    let source = source.to_owned();
 
     // Write to stdin in a new thread, so that we can read from stdout on this
     // thread. This keeps the child from blocking on writing to its stdout which
@@ -385,9 +377,9 @@ fn run_rustfmt(source: String) -> Result<String, io::Error> {
     }
 }
 
-pub fn find_component<'a>(components: &'a [Component], name: &String) -> &'a Component {
+pub fn find_component<'a>(components: &'a [Component], name: &str) -> &'a Component {
     for comp in components {
-        if &comp.name == name {
+        if comp.name == name {
             return comp;
         }
     }
@@ -395,9 +387,9 @@ pub fn find_component<'a>(components: &'a [Component], name: &String) -> &'a Com
     panic!("Unknown component: {}", name);
 }
 
-pub fn find_resource<'a>(resources: &'a [Resource], name: &String) -> &'a Resource {
+pub fn find_resource<'a>(resources: &'a [Resource], name: &str) -> &'a Resource {
     for res in resources {
-        if &res.name == name {
+        if res.name == name {
             return res;
         }
     }

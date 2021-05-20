@@ -102,6 +102,11 @@ pub struct MyEcsComponentStore {
     bitset_acceleration: ::secs::hibitset::BitSet,
     bitset_enabled: ::secs::hibitset::BitSet,
 }
+impl Default for MyEcsComponentStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl MyEcsComponentStore {
     #[doc = "Initializes a new component store"]
     pub fn new() -> Self {
@@ -220,7 +225,6 @@ impl MyEcsComponentStore {
         } else {
             let exists = self.bitset_enabled.remove(builder.entity.index());
             if exists {
-                self.enabled;
                 if exists {
                     Some(crate::Enabled::default())
                 } else {
@@ -249,7 +253,6 @@ impl MyEcsComponentStore {
             }
             {
                 let exists = self.bitset_enabled.remove(entity.index());
-                self.enabled;
                 if exists {
                     Some(crate::Enabled::default())
                 } else {
@@ -398,7 +401,6 @@ impl MyEcsComponentStore {
         assert!(self.alive.contains(entity.index()), "Entity is not alive");
         let exists = self.bitset_enabled.remove(entity.index());
         if exists {
-            self.enabled;
             if exists {
                 Some(crate::Enabled::default())
             } else {

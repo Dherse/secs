@@ -134,18 +134,19 @@ impl ComponentStorage {
     pub fn remove_function(
         &self,
         component: &Component,
+        path: TokenStream,
         id: TokenStream,
         exists: TokenStream,
     ) -> TokenStream {
         match self {
-            ComponentStorage::Vec => quote::quote! { [#id.index() as usize].take() },
+            ComponentStorage::Vec => quote::quote! { #path[#id.index() as usize].take() },
             ComponentStorage::HashMap | ComponentStorage::BTreeMap => {
-                quote::quote! { .remove(&#id) }
+                quote::quote! { #path.remove(&#id) }
             }
             ComponentStorage::Null => {
                 let ty = component.as_ty();
                 quote::quote! {
-                    ; if #exists {
+                    if #exists {
                         Some(#ty::default())
                     } else {
                         None
@@ -153,7 +154,7 @@ impl ComponentStorage {
                 }
             }
             ComponentStorage::Flagged(flagged_inner) => {
-                flagged_inner.remove_function(component, id, exists)
+                flagged_inner.remove_function(component, path, id, exists)
             }
             _ => quote::quote! {},
         }
@@ -241,7 +242,7 @@ impl ComponentStorage {
 
 impl Component {
     pub fn as_field_name(&self) -> String {
-        format!("{}", self.name).to_case(Case::Snake)
+        self.name.to_case(Case::Snake)
     }
 
     pub fn as_mut_name(&self) -> String {

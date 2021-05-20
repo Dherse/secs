@@ -17,8 +17,7 @@ where
     futures.extend(
         iterator
             .map(|future| poll_once(future, cx))
-            .filter(Option::is_some)
-            .map(Option::unwrap),
+            .flatten(),
     );
 
     while !futures.is_empty() {
