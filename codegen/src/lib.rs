@@ -58,22 +58,6 @@ pub fn build(config: Config) -> String {
     // Load the main ECS files
     let main: ECS = load(&config, &config.main).unwrap();
 
-    // Regroup systems by stage (for scheduling)
-    let mut systems_by_stage: HashMap<String, Vec<System>> = HashMap::new();
-    for sys in &systems {
-        assert!(
-            main.stages.contains(&sys.stage),
-            "Unknown stage: {}",
-            sys.stage
-        );
-
-        if let Some(systems) = systems_by_stage.get_mut(&sys.stage) {
-            systems.push(sys.clone());
-        } else {
-            systems_by_stage.insert(sys.stage.clone(), vec![sys.clone()]);
-        }
-    }
-
     let output_struct = make_struct(&main, &components, &resources, &systems);
     let builder = make_builder(&main, &resources, &systems);
     let component_store = make_component_store(&main, &components);
@@ -125,9 +109,34 @@ fn make_struct(
     )
     .expect("Failed to parse error type");
 
-    let system_runs = systems
-        .iter()
-        .map(|sys| sys.kind.make_run(main, sys, components, resources));
+    // Regroup systems by stage (for scheduling)
+    let mut systems_by_stage: HashMap<String, Vec<System>> = HashMap::new();
+    for sys in systems {
+        assert!(
+            main.stages.contains(&sys.stage),
+            "Unknown stage: {}",
+            sys.stage
+        );
+
+        if let Some(systems) = systems_by_stage.get_mut(&sys.stage) {
+            systems.push(sys.clone());
+        } else {
+            systems_by_stage.insert(sys.stage.clone(), vec![sys.clone()]);
+        }
+    }
+
+    let mut system_runs = Vec::new();
+    for stage in &main.stages {
+        if let Some(systems) = systems_by_stage.get(stage) {
+            for system in systems {
+                system_runs.push(system.kind.make_run(main, system, components, resources));
+            }
+
+            system_runs.push(quote::quote! {
+                self.command_buffer.build(&mut self.components);
+            });
+        }
+    }
 
     let component_store = main.as_component_store_ident();
     let entity_builder = main.as_entity_builder_ident();
@@ -151,9 +160,7 @@ fn make_struct(
             pub fn run(&mut self) -> Result<(), #err_ty> {
                 let components = &mut self.components;
 
-                // TODO: make this per-stage and scheduled
                 #(#system_runs)*
-                self.command_buffer.build(&mut self.components);
 
                 Ok(())
             }
