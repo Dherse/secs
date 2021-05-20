@@ -1,6 +1,7 @@
-#![allow(unused_variables)]
+#![allow(unused_variables, dead_code)]
 pub struct MyEcs {
     components: MyEcsComponentStore,
+    command_buffer: MyEcsCommandBuffer,
     resource_delta_time: crate::DeltaTime,
 }
 impl MyEcs {
@@ -11,11 +12,11 @@ impl MyEcs {
     #[doc = "Runs the ECS"]
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let components = &mut self.components;
-        for id in ::secs::hibitset::BitSetAnd(
-            ::secs::hibitset::BitSetAnd(&components.bitset_velocity, &components.bitset_position),
-            &components.alive,
-        ) {
+        for id in
+            ::secs::hibitset::BitSetAnd(&components.bitset_velocity, &components.bitset_position)
+        {
             let id = ::secs::Entity::new(id);
+            let entt = id;
             let sys_physics_comp_position = components
                 .position
                 .get_mut(id.index() as usize)
@@ -28,8 +29,14 @@ impl MyEcs {
                 .unwrap()
                 .as_ref()
                 .unwrap();
-            crate::physics_system(sys_physics_comp_position, sys_physics_comp_velocity);
+            crate::physics_system(
+                entt,
+                sys_physics_comp_position,
+                sys_physics_comp_velocity,
+                &mut self.command_buffer,
+            );
         }
+        self.command_buffer.build(&mut self.components);
         Ok(())
     }
     #[doc = "Returns a new entity builder"]
@@ -59,15 +66,19 @@ impl MyEcsBuilder {
     }
     #[doc = "Builds the builder into the ECS"]
     pub fn build(self) -> MyEcs {
+        let components = MyEcsComponentStore::new();
         MyEcs {
-            components: MyEcsComponentStore::new(),
+            command_buffer: MyEcsCommandBuffer::new(&components),
+            components,
             resource_delta_time: self.resource_delta_time,
         }
     }
     #[doc = "Builds the builder into the ECS with a capacity"]
     pub fn with_capacity(self, capacity: usize) -> MyEcs {
+        let components = MyEcsComponentStore::with_capacity(capacity);
         MyEcs {
-            components: MyEcsComponentStore::with_capacity(capacity),
+            command_buffer: MyEcsCommandBuffer::new(&components),
+            components,
             resource_delta_time: self.resource_delta_time,
         }
     }
@@ -78,9 +89,9 @@ impl MyEcsBuilder {
     }
 }
 pub struct MyEcsComponentStore {
-    max: ::std::sync::atomic::AtomicU32,
-    freed_rx: std::sync::mpsc::Receiver<u32>,
-    freed_tx: std::sync::mpsc::Sender<u32>,
+    max: ::std::sync::Arc<::std::sync::atomic::AtomicU32>,
+    freed_rx: ::secs::crossbeam_channel::Receiver<u32>,
+    freed_tx: ::secs::crossbeam_channel::Sender<u32>,
     alive: ::secs::hibitset::BitSet,
     position: Vec<Option<crate::Position>>,
     velocity: Vec<Option<crate::Velocity>>,
@@ -94,9 +105,9 @@ pub struct MyEcsComponentStore {
 impl MyEcsComponentStore {
     #[doc = "Initializes a new component store"]
     pub fn new() -> Self {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = ::secs::crossbeam_channel::unbounded();
         Self {
-            max: ::std::sync::atomic::AtomicU32::new(0),
+            max: ::std::sync::Arc::new(::std::sync::atomic::AtomicU32::new(0)),
             alive: ::secs::hibitset::BitSet::new(),
             freed_rx: rx,
             freed_tx: tx,
@@ -112,9 +123,9 @@ impl MyEcsComponentStore {
     }
     #[doc = "Initializes a new component store with a base capacity"]
     pub fn with_capacity(capacity: usize) -> Self {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = ::secs::crossbeam_channel::unbounded();
         Self {
-            max: ::std::sync::atomic::AtomicU32::new(0),
+            max: ::std::sync::Arc::new(::std::sync::atomic::AtomicU32::new(0)),
             alive: ::secs::hibitset::BitSet::new(),
             freed_rx: rx,
             freed_tx: tx,
@@ -129,7 +140,7 @@ impl MyEcsComponentStore {
         }
     }
     #[doc = "Checks if an `entity` is alive"]
-    pub fn is_alive(&self, entity: ::secs::Entity) -> bool {
+    pub fn alive(&self, entity: ::secs::Entity) -> bool {
         self.alive.contains(entity.index())
     }
     #[doc = "Reserves an entity id, this entity is dead until it has been built!"]
@@ -476,6 +487,155 @@ impl MyEcsEntityBuilder {
     #[doc = "Removes the component 'enabled' of type [`crate::Enabled`] to the entity"]
     pub fn del_enabled(&mut self) -> &mut Self {
         self.enabled = None;
+        self
+    }
+}
+pub struct MyEcsCommandBuffer {
+    next: ::std::sync::Arc<::std::sync::atomic::AtomicU32>,
+    receiver: ::secs::crossbeam_channel::Receiver<u32>,
+    new_entities: Vec<MyEcsEntityBuilder>,
+    deleted_entities: ::secs::fxhash::FxHashSet<::secs::Entity>,
+    add_position: ::secs::fxhash::FxHashMap<::secs::Entity, crate::Position>,
+    del_position: ::secs::fxhash::FxHashSet<::secs::Entity>,
+    add_velocity: ::secs::fxhash::FxHashMap<::secs::Entity, crate::Velocity>,
+    del_velocity: ::secs::fxhash::FxHashSet<::secs::Entity>,
+    add_acceleration: ::secs::fxhash::FxHashMap<::secs::Entity, crate::Acceleration>,
+    del_acceleration: ::secs::fxhash::FxHashSet<::secs::Entity>,
+    add_enabled: ::secs::fxhash::FxHashMap<::secs::Entity, crate::Enabled>,
+    del_enabled: ::secs::fxhash::FxHashSet<::secs::Entity>,
+}
+impl MyEcsCommandBuffer {
+    #[doc = "Creates a new command buffer"]
+    fn new(store: &MyEcsComponentStore) -> Self {
+        Self {
+            new_entities: Vec::new(),
+            next: ::std::sync::Arc::clone(&store.max),
+            receiver: store.freed_rx.clone(),
+            deleted_entities: ::secs::fxhash::FxHashSet::default(),
+            add_position: ::secs::fxhash::FxHashMap::default(),
+            del_position: ::secs::fxhash::FxHashSet::default(),
+            add_velocity: ::secs::fxhash::FxHashMap::default(),
+            del_velocity: ::secs::fxhash::FxHashSet::default(),
+            add_acceleration: ::secs::fxhash::FxHashMap::default(),
+            del_acceleration: ::secs::fxhash::FxHashSet::default(),
+            add_enabled: ::secs::fxhash::FxHashMap::default(),
+            del_enabled: ::secs::fxhash::FxHashSet::default(),
+        }
+    }
+    #[doc = "Schedules the creation of an entity, already reserving its ID"]
+    pub fn entity<F: Fn(::secs::Entity, &mut MyEcsEntityBuilder)>(
+        &mut self,
+        fun: F,
+    ) -> ::secs::Entity {
+        let entity = if let Ok(value) = self.receiver.try_recv() {
+            ::secs::Entity::new(value)
+        } else {
+            ::secs::Entity::new(
+                self.next
+                    .fetch_add(1, ::std::sync::atomic::Ordering::SeqCst),
+            )
+        };
+        let mut entity_builder = MyEcsEntityBuilder::new(entity);
+        fun(entity, &mut entity_builder);
+        self.new_entities.push(entity_builder);
+        entity
+    }
+    #[doc = "Applied the command buffer to the component store clearing the buffer afterwards"]
+    pub fn build(&mut self, store: &mut MyEcsComponentStore) {
+        self.deleted_entities.drain().for_each(|entity| {
+            store.kill(entity);
+        });
+        self.new_entities
+            .drain(..)
+            .for_each(|builder| store.build(builder));
+        for (entity, value) in self.add_position.drain() {
+            if store.alive(entity) {
+                store.add_position(entity, value);
+            }
+        }
+        for entity in self.del_position.drain() {
+            if store.alive(entity) {
+                store.del_position(entity);
+            }
+        }
+        for (entity, value) in self.add_velocity.drain() {
+            if store.alive(entity) {
+                store.add_velocity(entity, value);
+            }
+        }
+        for entity in self.del_velocity.drain() {
+            if store.alive(entity) {
+                store.del_velocity(entity);
+            }
+        }
+        for (entity, value) in self.add_acceleration.drain() {
+            if store.alive(entity) {
+                store.add_acceleration(entity, value);
+            }
+        }
+        for entity in self.del_acceleration.drain() {
+            if store.alive(entity) {
+                store.del_acceleration(entity);
+            }
+        }
+        for (entity, value) in self.add_enabled.drain() {
+            if store.alive(entity) {
+                store.add_enabled(entity, value);
+            }
+        }
+        for entity in self.del_enabled.drain() {
+            if store.alive(entity) {
+                store.del_enabled(entity);
+            }
+        }
+    }
+    #[doc = "Schedules the deletion of an entity"]
+    pub fn delete(&mut self, entity: ::secs::Entity) -> &mut Self {
+        self.deleted_entities.insert(entity);
+        self
+    }
+    #[doc = "Schedule the addition of the component 'position' of type [`crate::Position`] to the `entity`"]
+    pub fn position(&mut self, entity: ::secs::Entity, value: crate::Position) -> &mut Self {
+        self.add_position.insert(entity, value);
+        self
+    }
+    #[doc = "Schedule the removal of the component 'position' of type [`crate::Position`] to the `entity`"]
+    pub fn del_position(&mut self, entity: ::secs::Entity) -> &mut Self {
+        self.del_position.insert(entity);
+        self
+    }
+    #[doc = "Schedule the addition of the component 'velocity' of type [`crate::Velocity`] to the `entity`"]
+    pub fn velocity(&mut self, entity: ::secs::Entity, value: crate::Velocity) -> &mut Self {
+        self.add_velocity.insert(entity, value);
+        self
+    }
+    #[doc = "Schedule the removal of the component 'velocity' of type [`crate::Velocity`] to the `entity`"]
+    pub fn del_velocity(&mut self, entity: ::secs::Entity) -> &mut Self {
+        self.del_velocity.insert(entity);
+        self
+    }
+    #[doc = "Schedule the addition of the component 'acceleration' of type [`crate::Acceleration`] to the `entity`"]
+    pub fn acceleration(
+        &mut self,
+        entity: ::secs::Entity,
+        value: crate::Acceleration,
+    ) -> &mut Self {
+        self.add_acceleration.insert(entity, value);
+        self
+    }
+    #[doc = "Schedule the removal of the component 'acceleration' of type [`crate::Acceleration`] to the `entity`"]
+    pub fn del_acceleration(&mut self, entity: ::secs::Entity) -> &mut Self {
+        self.del_acceleration.insert(entity);
+        self
+    }
+    #[doc = "Schedule the addition of the component 'enabled' of type [`crate::Enabled`] to the `entity`"]
+    pub fn enabled(&mut self, entity: ::secs::Entity, value: crate::Enabled) -> &mut Self {
+        self.add_enabled.insert(entity, value);
+        self
+    }
+    #[doc = "Schedule the removal of the component 'enabled' of type [`crate::Enabled`] to the `entity`"]
+    pub fn del_enabled(&mut self, entity: ::secs::Entity) -> &mut Self {
+        self.del_enabled.insert(entity);
         self
     }
 }

@@ -108,9 +108,14 @@ impl ComponentStorage {
         }
     }
 
-    pub fn write_function(&self, path: TokenStream, id: TokenStream, value: TokenStream) -> TokenStream {
+    pub fn write_function(
+        &self,
+        path: TokenStream,
+        id: TokenStream,
+        value: TokenStream,
+    ) -> TokenStream {
         match self {
-            ComponentStorage::Vec => quote::quote! { 
+            ComponentStorage::Vec => quote::quote! {
                 if #path.len() <= #id.index() as usize {
                     #path.resize(#id.index() as usize + 1, None);
                 }
@@ -120,7 +125,7 @@ impl ComponentStorage {
             ComponentStorage::HashMap | ComponentStorage::BTreeMap => {
                 quote::quote! { #path.insert(#id, #value); }
             }
-            ComponentStorage::Null => quote::quote! { },
+            ComponentStorage::Null => quote::quote! {},
             ComponentStorage::DenseVec => todo!(),
             ComponentStorage::Flagged(_) => todo!(),
         }

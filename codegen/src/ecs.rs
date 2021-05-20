@@ -44,4 +44,11 @@ impl ECS {
             Span::call_site(),
         )
     }
+
+    pub fn as_command_buffer_ident(&self) -> Ident {
+        Ident::new(
+            &format!("{}CommandBuffer", self.name).to_case(Case::UpperCamel),
+            Span::call_site(),
+        )
+    }
 }

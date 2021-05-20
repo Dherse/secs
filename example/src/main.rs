@@ -1,6 +1,7 @@
 use std::time::Instant;
 
-use ecs::MyEcsBuilder;
+use ecs::{MyEcsBuilder, MyEcsCommandBuffer};
+use secs::Entity;
 
 pub mod ecs;
 
@@ -89,8 +90,10 @@ pub struct Position {
 #[derive(Clone, Debug, Copy, Default)]
 pub struct Enabled;
 
-pub fn physics_system(pos: &mut Position, velo: &Velocity) {
+pub fn physics_system(entity: Entity, pos: &mut Position, velo: &Velocity, cmd: &mut MyEcsCommandBuffer) {
     pos.x += velo.x;
     pos.y += velo.y;
     pos.z += velo.z;
+
+    cmd.del_velocity(entity);
 }

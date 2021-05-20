@@ -10,18 +10,16 @@ use config::Config;
 use proc_macro2::TokenStream;
 use serde::Deserialize;
 
-use crate::{
-    component::Component, ecs::ECS, entity::make_entity_builder, resource::Resource,
-    store::make_component_store, system::System,
-};
+use crate::{command::build_command_buffer, component::Component, ecs::ECS, entity::make_entity_builder, resource::Resource, store::make_component_store, system::System};
 
-pub mod component;
+mod command;
+mod component;
 pub mod config;
-pub mod ecs;
-pub mod entity;
-pub mod resource;
-pub mod store;
-pub mod system;
+mod ecs;
+mod entity;
+mod resource;
+mod store;
+mod system;
 
 pub fn build(config: Config) -> String {
     // Load the component files
@@ -80,15 +78,17 @@ pub fn build(config: Config) -> String {
     let builder = make_builder(&main, &resources, &systems);
     let component_store = make_component_store(&main, &components);
     let entity_builder = make_entity_builder(&main, &components);
+    let command_buffer = build_command_buffer(&main, &components);
 
     let output = format!(
         "{}",
         quote::quote! {
-            #![allow(unused_variables)]
+            #![allow(unused_variables, dead_code)]
             #output_struct
             #builder
             #component_store
             #entity_builder
+            #command_buffer
         }
     );
 
@@ -131,10 +131,12 @@ fn make_struct(
 
     let component_store = main.as_component_store_ident();
     let entity_builder = main.as_entity_builder_ident();
+    let command_buffer = main.as_command_buffer_ident();
 
     quote::quote! {
         pub struct #name {
             components: #component_store,
+            command_buffer: #command_buffer,
             #(#resource_types,)*
             #(#system_state_types,)*
         }
@@ -149,7 +151,9 @@ fn make_struct(
             pub fn run(&mut self) -> Result<(), #err_ty> {
                 let components = &mut self.components;
 
+                // TODO: make this per-stage and scheduled
                 #(#system_runs)*
+                self.command_buffer.build(&mut self.components);
 
                 Ok(())
             }
@@ -180,6 +184,7 @@ fn make_builder(main: &ECS, resources: &[Resource], systems: &[System]) -> Token
     let ecs_name = main.as_ident();
     let name = main.as_builder_ident();
     let store = main.as_component_store_ident();
+    let command_buffer = main.as_command_buffer_ident();
 
     let resource_types: Vec<TokenStream> =
         resources.iter().map(Resource::as_builder_field).collect();
@@ -279,8 +284,10 @@ fn make_builder(main: &ECS, resources: &[Resource], systems: &[System]) -> Token
 
             #[doc = "Builds the builder into the ECS"]
             pub fn build(self) -> #ecs_name {
+                let components = #store::new();
                 #ecs_name {
-                    components: #store::new(),
+                    command_buffer: #command_buffer::new(&components),
+                    components,
                     #(#res_set,)*
                     #(#state_set,)*
                 }
@@ -288,8 +295,10 @@ fn make_builder(main: &ECS, resources: &[Resource], systems: &[System]) -> Token
 
             #[doc = "Builds the builder into the ECS with a capacity"]
             pub fn with_capacity(self, capacity: usize) -> #ecs_name {
+                let components = #store::with_capacity(capacity);
                 #ecs_name {
-                    components: #store::with_capacity(capacity),
+                    command_buffer: #command_buffer::new(&components),
+                    components,
                     #(#res_set,)*
                     #(#state_set,)*
                 }

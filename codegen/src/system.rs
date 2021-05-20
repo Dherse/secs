@@ -165,6 +165,7 @@ impl Element {
         &self,
         this: TokenStream,
         id: TokenStream,
+        main: &ECS,
         components: &[Component],
         resources: &[Resource],
         system: &System,
@@ -236,12 +237,12 @@ impl Element {
                 }
             }
             Element::Entity => quote::quote! { let entt = #id; },
-            Element::CommandBuffer => todo!(),
+            Element::CommandBuffer => quote::quote! {},
             Element::Const(_) => quote::quote! {},
         }
     }
 
-    pub fn getter(&self, system: &System) -> TokenStream {
+    pub fn getter(&self, system: &System, this: TokenStream) -> TokenStream {
         match self {
             Element::State(_) => {
                 let name = Ident::new(
@@ -269,7 +270,9 @@ impl Element {
             }
             Element::Entity => quote::quote! { entt },
             Element::Const(c) => syn::parse_str(c).expect("Failed to parse const"),
-            Element::CommandBuffer => todo!(),
+            Element::CommandBuffer => {
+                quote::quote! { &mut #this.command_buffer }
+            },
         }
     }
 }
@@ -383,7 +386,7 @@ impl SystemKind {
             }
         }
 
-        comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#comp_iter, &components.alive) };
+        // comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#comp_iter, &components.alive) };
 
         match self {
             SystemKind::ForEachFunction => {
@@ -403,6 +406,7 @@ impl SystemKind {
                     elem.init(
                         quote::quote! { components },
                         quote::quote! { id },
+                        main,
                         components,
                         resources,
                         system,
@@ -410,7 +414,7 @@ impl SystemKind {
                     )
                 });
 
-                let refs = system.signature.iter().map(|elem| elem.getter(system));
+                let refs = system.signature.iter().map(|elem| elem.getter(system, quote::quote! { self }));
 
                 quote::quote! {
                     for id in #comp_iter {
@@ -436,6 +440,7 @@ impl SystemKind {
                     elem.init(
                         quote::quote! { this },
                         quote::quote! { id },
+                        main,
                         components,
                         resources,
                         system,
@@ -443,7 +448,7 @@ impl SystemKind {
                     )
                 });
 
-                let refs = system.signature.iter().map(|elem| elem.getter(system));
+                let refs = system.signature.iter().map(|elem| elem.getter(system, quote::quote! { this }));
 
                 quote::quote! {
                     thread_local! {

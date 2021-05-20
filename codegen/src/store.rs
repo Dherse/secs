@@ -92,9 +92,11 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
             quote::quote! { exists },
         );
 
-        let set = comp
-            .storage
-            .write_function(quote::quote! { self.#name }, quote::quote! { builder.entity }, quote::quote! { value });
+        let set = comp.storage.write_function(
+            quote::quote! { self.#name },
+            quote::quote! { builder.entity },
+            quote::quote! { value },
+        );
 
         quote::quote! {
             if let Some(value) = builder.#name {
@@ -113,9 +115,9 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
 
     quote::quote! {
         pub struct #component_store{
-            max: ::std::sync::atomic::AtomicU32,
-            freed_rx: std::sync::mpsc::Receiver<u32>,
-            freed_tx: std::sync::mpsc::Sender<u32>,
+            max: ::std::sync::Arc<::std::sync::atomic::AtomicU32>,
+            freed_rx: ::secs::crossbeam_channel::Receiver<u32>,
+            freed_tx: ::secs::crossbeam_channel::Sender<u32>,
             alive: ::secs::hibitset::BitSet,
             #(#component_types,)*
             #(#component_bitsets,)*
@@ -124,9 +126,9 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
         impl #component_store {
             #[doc = "Initializes a new component store"]
             pub fn new() -> Self{
-                let (tx, rx) = std::sync::mpsc::channel();
+                let (tx, rx) = ::secs::crossbeam_channel::unbounded();
                 Self {
-                    max: ::std::sync::atomic::AtomicU32::new(0),
+                    max: ::std::sync::Arc::new(::std::sync::atomic::AtomicU32::new(0)),
                     alive: ::secs::hibitset::BitSet::new(),
                     freed_rx: rx,
                     freed_tx: tx,
@@ -137,9 +139,9 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
 
             #[doc = "Initializes a new component store with a base capacity"]
             pub fn with_capacity(capacity: usize) -> Self{
-                let (tx, rx) = std::sync::mpsc::channel();
+                let (tx, rx) = ::secs::crossbeam_channel::unbounded();
                 Self {
-                    max: ::std::sync::atomic::AtomicU32::new(0),
+                    max: ::std::sync::Arc::new(::std::sync::atomic::AtomicU32::new(0)),
                     alive: ::secs::hibitset::BitSet::new(),
                     freed_rx: rx,
                     freed_tx: tx,
@@ -149,7 +151,7 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
             }
 
             #[doc = "Checks if an `entity` is alive"]
-            pub fn is_alive(&self, entity: ::secs::Entity) -> bool {
+            pub fn alive(&self, entity: ::secs::Entity) -> bool {
                 self.alive.contains(entity.index())
             }
 
@@ -195,9 +197,11 @@ fn make_setters(comp: &Component) -> TokenStream {
     let add_name = comp.as_add_ident();
     let del_name = comp.as_del_ident();
     let bitset_name = comp.as_bitset();
-    let set_call = comp
-        .storage
-        .write_function(quote::quote!{ self.#name }, quote::quote! { entity }, quote::quote! { value });
+    let set_call = comp.storage.write_function(
+        quote::quote! { self.#name },
+        quote::quote! { entity },
+        quote::quote! { value },
+    );
     let del_call =
         comp.storage
             .remove_function(comp, quote::quote! { entity }, quote::quote! { exists });
