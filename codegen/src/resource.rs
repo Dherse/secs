@@ -12,6 +12,9 @@ pub struct Resource {
 
     /// Whether or not the resource implement default
     pub default: bool,
+
+    /// List of lifetimes the `path` contains
+    pub lifetimes: Option<Vec<String>>,
 }
 
 impl Resource {

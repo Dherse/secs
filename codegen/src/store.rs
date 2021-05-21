@@ -1,11 +1,9 @@
 use proc_macro2::TokenStream;
 
-use crate::{
-    component::{Component, ComponentStorage},
-    ecs::ECS,
-};
+use crate::{GenericOutput, component::{Component, ComponentStorage}, ecs::ECS};
 
-pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream {
+pub(crate) fn make_component_store(main: &ECS, components: &[Component],
+    generics: &GenericOutput) -> TokenStream {
     let component_store = main.as_component_store_ident();
 
     let component_types: Vec<TokenStream> =
@@ -70,9 +68,12 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
     let delete_calls = components.iter().map(|comp| {
         let bitset = comp.as_bitset();
         let name = comp.as_ident();
-        let delete =
-            comp.storage
-                .remove_function(comp, quote::quote! { self.#name }, quote::quote! { entity }, quote::quote! { exists });
+        let delete = comp.storage.remove_function(
+            comp,
+            quote::quote! { self.#name },
+            quote::quote! { entity },
+            quote::quote! { exists },
+        );
 
         quote::quote! {
             {
@@ -88,7 +89,7 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
 
         let delete = comp.storage.remove_function(
             comp,
-            quote::quote!{ self.#name },
+            quote::quote! { self.#name },
             quote::quote! { builder.entity },
             quote::quote! { exists },
         );
@@ -114,8 +115,10 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
 
     let name_builder = main.as_entity_builder_ident();
 
+    let component_generics = &generics.components;
+
     quote::quote! {
-        pub struct #component_store{
+        pub struct #component_store#component_generics {
             max: ::std::sync::Arc<::std::sync::atomic::AtomicU32>,
             freed_rx: ::secs::crossbeam_channel::Receiver<u32>,
             freed_tx: ::secs::crossbeam_channel::Sender<u32>,
@@ -124,13 +127,13 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
             #(#component_bitsets,)*
         }
 
-        impl Default for #component_store {
+        impl#component_generics Default for #component_store#component_generics {
             fn default() -> Self {
                 Self::new()
             }
         }
 
-        impl #component_store {
+        impl#component_generics #component_store#component_generics {
             #[doc = "Initializes a new component store"]
             pub fn new() -> Self{
                 let (tx, rx) = ::secs::crossbeam_channel::unbounded();
@@ -177,7 +180,7 @@ pub fn make_component_store(main: &ECS, components: &[Component]) -> TokenStream
                 #(#push_calls)*
             }
 
-            pub fn build(&mut self, builder: #name_builder) {
+            pub fn build(&mut self, builder: #name_builder#component_generics) {
                 self.alive.add(builder.entity.index());
                 #(#build_calls)*
             }
@@ -209,9 +212,12 @@ fn make_setters(comp: &Component) -> TokenStream {
         quote::quote! { entity },
         quote::quote! { value },
     );
-    let del_call =
-        comp.storage
-            .remove_function(comp, quote::quote! { self.#name }, quote::quote! { entity }, quote::quote! { exists });
+    let del_call = comp.storage.remove_function(
+        comp,
+        quote::quote! { self.#name },
+        quote::quote! { entity },
+        quote::quote! { exists },
+    );
     let doc_str_add = format!(
         "Adds the component '{}' of type [`{}`] to the `entity`",
         comp.name, comp.path

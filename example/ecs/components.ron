@@ -1,10 +1,13 @@
+#![enable(implicit_some)]
 [
     Component(
         // The path to the component
-        path: "crate::Position",
+        path: "crate::Position<'position>",
 
         // The name of the component (allows multiple components with the same type but different names)
         name: "position",
+
+        lifetimes: [ "position" ],
 
         // The storage type of this component: Vec, HashMap, BTreeMap, DenseVec, Flagged(BaseStorageKind), Null
         storage: Vec,
@@ -33,5 +36,5 @@
         path: "crate::Enabled",
         name: "enabled",
         storage: Null,
-    )
+    ),
 ]

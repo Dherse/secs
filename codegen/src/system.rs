@@ -29,6 +29,9 @@ pub struct System {
     /// The state of this system, these must be specified when the system starts or implement [`Default`]
     pub state: Option<String>,
 
+    /// List of lifetimes the `state` contains
+    pub lifetimes: Option<Vec<String>>,
+
     // Signature of the system
     pub signature: Vec<Element>,
 }
@@ -254,7 +257,7 @@ impl Element {
             Element::Const(c) => syn::parse_str(c).expect("Failed to parse const"),
             Element::CommandBuffer => {
                 quote::quote! { &mut #this.command_buffer }
-            },
+            }
         }
     }
 }
@@ -395,7 +398,10 @@ impl SystemKind {
                     )
                 });
 
-                let refs = system.signature.iter().map(|elem| elem.getter(system, quote::quote! { self }));
+                let refs = system
+                    .signature
+                    .iter()
+                    .map(|elem| elem.getter(system, quote::quote! { self }));
 
                 quote::quote! {
                     for id in #comp_iter {
@@ -428,7 +434,10 @@ impl SystemKind {
                     )
                 });
 
-                let refs = system.signature.iter().map(|elem| elem.getter(system, quote::quote! { this }));
+                let refs = system
+                    .signature
+                    .iter()
+                    .map(|elem| elem.getter(system, quote::quote! { this }));
 
                 quote::quote! {
                     thread_local! {

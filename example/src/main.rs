@@ -1,6 +1,6 @@
-use std::time::Instant;
+use std::{marker::PhantomData, time::Instant};
 
-use ecs::{MyEcsBuilder, MyEcsCommandBuffer};
+use ecs::MyEcsBuilder;
 use secs::Entity;
 
 pub mod ecs;
@@ -24,6 +24,7 @@ fn main() {
                     x: 0.0,
                     y: 50.0,
                     z: 0.0,
+                    _phantom: Default::default(),
                 })
                 .velocity(Velocity {
                     x: 50.0,
@@ -38,6 +39,7 @@ fn main() {
             x: 0.0,
             y: -9.81,
             z: 0.0,
+            _phantom: Default::default(),
         }));
     }
 
@@ -81,19 +83,18 @@ pub struct Velocity {
 }
 
 #[derive(Clone, Debug, Copy)]
-pub struct Position {
+pub struct Position<'a> {
     x: f32,
     y: f32,
     z: f32,
+    _phantom: PhantomData<&'a ()>
 }
 
 #[derive(Clone, Debug, Copy, Default)]
 pub struct Enabled;
 
-pub fn physics_system(entity: Entity, pos: &mut Position, velo: &Velocity, cmd: &mut MyEcsCommandBuffer) {
+pub fn physics_system<'a>(_entity: Entity, pos: &mut Position<'a>, velo: &Velocity) {
     pos.x += velo.x;
     pos.y += velo.y;
     pos.z += velo.z;
-
-    cmd.del_velocity(entity);
 }

@@ -1,8 +1,8 @@
 use proc_macro2::TokenStream;
 
-use crate::{component::Component, ecs::ECS};
+use crate::{GenericOutput, component::Component, ecs::ECS};
 
-pub fn make_entity_builder(main: &ECS, components: &[Component]) -> TokenStream {
+pub(crate) fn make_entity_builder(main: &ECS, components: &[Component], generics: &GenericOutput,) -> TokenStream {
     let name = main.as_entity_builder_ident();
 
     let fields = components.iter().map(|comp| {
@@ -52,13 +52,15 @@ pub fn make_entity_builder(main: &ECS, components: &[Component]) -> TokenStream 
         }
     });
 
+    let component_generics = &generics.components;
+
     quote::quote! {
-        pub struct #name {
+        pub struct #name#component_generics {
             entity: ::secs::Entity,
             #(#fields,)*
         }
 
-        impl #name {
+        impl#component_generics #name#component_generics {
             fn new(entity: ::secs::Entity) -> Self {
                 Self {
                     entity,

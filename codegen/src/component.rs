@@ -147,7 +147,7 @@ impl ComponentStorage {
                 let ty = component.as_ty();
                 quote::quote! {
                     if #exists {
-                        Some(#ty::default())
+                        Some(<#ty>::default())
                     } else {
                         None
                     }
@@ -200,10 +200,13 @@ pub struct Component {
 
     /// The type of storage used by this component
     pub storage: ComponentStorage,
+
+    /// List of lifetimes the `path` contains
+    pub lifetimes: Option<Vec<String>>,
 }
 
 impl ComponentStorage {
-    pub fn as_type(&self, ty: TokenStream) -> TokenStream {
+    pub fn as_type(&self, comp: &Component, ty: TokenStream) -> TokenStream {
         match self {
             ComponentStorage::Vec => quote::quote! { Vec<Option<#ty>> },
             ComponentStorage::HashMap => {
@@ -213,28 +216,17 @@ impl ComponentStorage {
                 quote::quote! { ::std::collections::BTreeMap<::secs::Entity, #ty> }
             }
             ComponentStorage::DenseVec => quote::quote! { ::secs::DenseVec<#ty> },
-            ComponentStorage::Null => quote::quote! { () },
+            ComponentStorage::Null => {
+                if let Some(lifetimes) = &comp.lifetimes {
+                    if !lifetimes.is_empty() {
+                        panic!("Null components cannot have lifetimes, found for: {}", comp.name);
+                    }
+                }
+                quote::quote! { () }
+            },
             ComponentStorage::Flagged(flagged) => {
-                let flagged_ty = flagged.as_type(ty);
+                let flagged_ty = flagged.as_type(comp, ty);
                 quote::quote! { ::secs::Flagged<#flagged_ty> }
-            }
-        }
-    }
-
-    pub fn as_type_init(&self, ty: TokenStream) -> TokenStream {
-        match self {
-            ComponentStorage::Vec => quote::quote! { Vec::<Option<#ty>> },
-            ComponentStorage::HashMap => {
-                quote::quote! { ::fxhash::FxHashMap::<::secs::Entity, #ty> }
-            }
-            ComponentStorage::BTreeMap => {
-                quote::quote! { ::std::collections::BTreeMap::<::secs::Entity, #ty> }
-            }
-            ComponentStorage::DenseVec => quote::quote! { ::secs::DenseVec::<#ty> },
-            ComponentStorage::Null => quote::quote! { ::secs::Null::<#ty> },
-            ComponentStorage::Flagged(flagged) => {
-                let flagged_ty = flagged.as_type(ty);
-                quote::quote! { ::secs::Flagged::<#flagged_ty> }
             }
         }
     }
@@ -287,12 +279,7 @@ impl Component {
 
     pub fn as_storage(&self) -> TokenStream {
         let ty = self.as_ty();
-        self.storage.as_type(ty)
-    }
-
-    pub fn as_storage_init(&self) -> TokenStream {
-        let ty = self.as_ty();
-        self.storage.as_type_init(ty)
+        self.storage.as_type(self, ty)
     }
 
     pub fn as_struct_field(&self) -> TokenStream {

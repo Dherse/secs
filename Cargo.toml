@@ -2,14 +2,14 @@
 members = [
     "lib",
     "codegen",
-    "example"
+    "example",
 ]
 
 [profile.release]
 # Enable link-time optimization, eliminates more code and inlines across crate boundaries.
 lto = true
 
-# Limits the number of threads to 1 to improve the level of optimization that may be achieved
+# Default value
 codegen-units = 16
 
 # Debug info in release build, does not impact performance

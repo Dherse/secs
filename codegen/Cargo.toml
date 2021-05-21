@@ -22,3 +22,6 @@ ron = "0.6.4"
 
 # Conversion of string case
 convert_case = "0.4.0"
+
+# Faster HashMap and HashSet
+fxhash = "0.2.1"

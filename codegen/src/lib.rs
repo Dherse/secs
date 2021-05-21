@@ -1,11 +1,21 @@
-use std::{collections::HashMap, fs::File, io::{self, Read, Write}, path::Path, process::{Command, Stdio}};
+use std::{
+    fs::File,
+    io::{self, Read, Write},
+    path::Path,
+    process::{Command, Stdio},
+};
 
 use config::Config;
+use fxhash::{FxHashMap, FxHashSet};
 use proc_macro2::TokenStream;
 use serde::Deserialize;
 
-use crate::{command::build_command_buffer, component::Component, ecs::ECS, entity::make_entity_builder, resource::Resource, store::make_component_store, system::System};
+use crate::{
+    builder::make_builder, command::build_command_buffer, component::Component, ecs::ECS,
+    entity::make_entity_builder, resource::Resource, store::make_component_store, system::System,
+};
 
+mod builder;
 mod command;
 mod component;
 pub mod config;
@@ -52,11 +62,42 @@ pub fn build(config: Config) -> String {
     // Load the main ECS files
     let main: ECS = load(&config, &config.main).unwrap();
 
-    let output_struct = make_struct(&main, &components, &resources, &systems);
-    let builder = make_builder(&main, &resources, &systems);
-    let component_store = make_component_store(&main, &components);
-    let entity_builder = make_entity_builder(&main, &components);
-    let command_buffer = build_command_buffer(&main, &components);
+    let component_lifetimes = components
+        .iter()
+        .filter_map(|comp| comp.lifetimes.clone())
+        .flatten()
+        .collect::<FxHashSet<_>>();
+
+    let system_lifetimes = systems
+        .iter()
+        .filter_map(|sys| sys.lifetimes.clone())
+        .flatten()
+        .collect::<FxHashSet<_>>();
+
+    let resource_lifetimes = resources
+        .iter()
+        .filter_map(|res| res.lifetimes.clone())
+        .flatten()
+        .collect::<FxHashSet<_>>();
+
+    // Regroup all lifetimes
+    let mut lifetimes = FxHashSet::default();
+    lifetimes.extend(component_lifetimes.iter().cloned());
+    lifetimes.extend(system_lifetimes.iter().cloned());
+    lifetimes.extend(resource_lifetimes.iter().cloned());
+
+    let generics = make_generics(
+        lifetimes,
+        component_lifetimes,
+        system_lifetimes,
+        resource_lifetimes,
+    );
+
+    let output_struct = make_struct(&main, &components, &resources, &systems, &generics);
+    let builder = make_builder(&main, &resources, &systems, &generics);
+    let component_store = make_component_store(&main, &components, &generics);
+    let entity_builder = make_entity_builder(&main, &components, &generics);
+    let command_buffer = build_command_buffer(&main, &components, &generics);
 
     let output = format!(
         "{}",
@@ -82,6 +123,7 @@ fn make_struct(
     components: &[Component],
     resources: &[Resource],
     systems: &[System],
+    generics: &GenericOutput,
 ) -> TokenStream {
     let name = main.as_ident();
     let builder_name = main.as_builder_ident();
@@ -104,7 +146,7 @@ fn make_struct(
     .expect("Failed to parse error type");
 
     // Regroup systems by stage (for scheduling)
-    let mut systems_by_stage: HashMap<String, Vec<System>> = HashMap::new();
+    let mut systems_by_stage: FxHashMap<String, Vec<System>> = FxHashMap::default();
     for sys in systems {
         assert!(
             main.stages.contains(&sys.stage),
@@ -136,17 +178,21 @@ fn make_struct(
     let entity_builder = main.as_entity_builder_ident();
     let command_buffer = main.as_command_buffer_ident();
 
+    let ecs_generics = &generics.ecs;
+    let builder_generics = &generics.builder;
+    let component_generics = &generics.components;
+
     quote::quote! {
-        pub struct #name {
-            components: #component_store,
-            command_buffer: #command_buffer,
+        pub struct #name#ecs_generics {
+            components: #component_store#component_generics,
+            command_buffer: #command_buffer#component_generics,
             #(#resource_types,)*
             #(#system_state_types,)*
         }
 
-        impl #name {
+        impl#ecs_generics #name#ecs_generics {
             #[doc = "Creates a builder for this ECS"]
-            pub fn builder() -> #builder_name {
+            pub fn builder() -> #builder_name#builder_generics {
                 #builder_name::new()
             }
 
@@ -160,154 +206,23 @@ fn make_struct(
             }
 
             #[doc = "Returns a new entity builder"]
-            pub fn next(&self) -> #entity_builder {
-                #entity_builder::new(self.components.next())
+            pub fn next(&self) -> #entity_builder#component_generics {
+                <#entity_builder>::new(self.components.next())
             }
 
-            pub fn build(&mut self, builder: #entity_builder) {
+            pub fn build(&mut self, builder: #entity_builder#component_generics) {
                 self.components.build(builder);
             }
 
             #[doc = "Gets an immutable reference to the component store"]
-            pub fn components(&self) -> &#component_store {
+            pub fn components(&self) -> &#component_store#component_generics {
                 &self.components
             }
 
             #[doc = "Gets a mutable reference to the component store"]
-            pub fn components_mut(&mut self) -> &mut #component_store {
+            pub fn components_mut(&mut self) -> &mut #component_store#component_generics {
                 &mut self.components
             }
-        }
-    }
-}
-
-fn make_builder(main: &ECS, resources: &[Resource], systems: &[System]) -> TokenStream {
-    let ecs_name = main.as_ident();
-    let name = main.as_builder_ident();
-    let store = main.as_component_store_ident();
-    let command_buffer = main.as_command_buffer_ident();
-
-    let resource_types: Vec<TokenStream> =
-        resources.iter().map(Resource::as_builder_field).collect();
-
-    let system_state_types: Vec<TokenStream> = systems
-        .iter()
-        .map(System::as_builder_field)
-        .flatten()
-        .collect();
-
-    let res_functions: Vec<TokenStream> = resources
-        .iter()
-        .map(|res| {
-            let ty = res.as_ty();
-            let name = res.as_field_ident();
-
-            let doc_str = format!("Sets the resource '{}' of type [`{}`]", res.name, res.path);
-
-            quote::quote! {
-                #[doc = #doc_str]
-                pub fn #name(mut self, value: #ty) -> Self {
-                    self.#name = value;
-                    self
-                }
-            }
-        })
-        .collect();
-
-    let res_set: Vec<TokenStream> = resources
-        .iter()
-        .map(|res| {
-            let name = res.as_field_ident();
-            if res.default {
-                quote::quote! {
-                    #name: self.#name
-                }
-            } else {
-                let err_str = format!("Resource `{}` of type `{}` not set", res.name, res.path);
-                quote::quote! {
-                    #name: self.#name.expect(#err_str)
-                }
-            }
-        })
-        .collect();
-
-    let state_functions: Vec<TokenStream> = systems
-        .iter()
-        .filter_map(|sys| {
-            let ty = sys.as_ty()?;
-            let name = sys.as_ident();
-
-            let doc_str = format!(
-                "Sets state of system '{}' of type `{}`",
-                sys.name,
-                sys.state.as_ref()?
-            );
-            Some(quote::quote! {
-                #[doc = #doc_str]
-                pub fn #name(mut self, value: #ty) -> Self {
-                    self.#name = Some(value);
-                    self
-                }
-            })
-        })
-        .collect();
-
-    let state_set: Vec<TokenStream> = systems
-        .iter()
-        .filter_map(|sys| {
-            let name = sys.as_ident();
-            if sys.state.is_some() {
-                let err_str = format!(
-                    "State of system `{}` of type `{}` not set",
-                    sys.name, sys.path
-                );
-                Some(quote::quote! {
-                    #name: self.#name.expect(#err_str)
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    quote::quote! {
-        #[derive(Default)]
-        pub struct #name {
-            #(#resource_types,)*
-            #(#system_state_types,)*
-        }
-
-        impl #name {
-            #[doc = "Creates a new builder"]
-            pub fn new() -> Self {
-                Self::default()
-            }
-
-            #[doc = "Builds the builder into the ECS"]
-            pub fn build(self) -> #ecs_name {
-                let components = #store::new();
-                #ecs_name {
-                    command_buffer: #command_buffer::new(&components),
-                    components,
-                    #(#res_set,)*
-                    #(#state_set,)*
-                }
-            }
-
-            #[doc = "Builds the builder into the ECS with a capacity"]
-            pub fn with_capacity(self, capacity: usize) -> #ecs_name {
-                let components = #store::with_capacity(capacity);
-                #ecs_name {
-                    command_buffer: #command_buffer::new(&components),
-                    components,
-                    #(#res_set,)*
-                    #(#state_set,)*
-                }
-            }
-
-            #(#res_functions)*
-
-            #(#state_functions)*
         }
     }
 }
@@ -395,4 +310,67 @@ pub fn find_resource<'a>(resources: &'a [Resource], name: &str) -> &'a Resource 
     }
 
     panic!("Unknown resource: {}", name);
+}
+
+pub(crate) struct GenericOutput {
+    pub ecs: TokenStream,
+    pub builder: TokenStream,
+    pub components: TokenStream,
+}
+
+fn make_generics(
+    lifetimes: FxHashSet<String>,
+    component_lifetimes: FxHashSet<String>,
+    system_lifetimes: FxHashSet<String>,
+    resource_lifetimes: FxHashSet<String>,
+) -> GenericOutput {
+    if lifetimes.is_empty() {
+        return GenericOutput {
+            ecs: quote::quote! {},
+            builder: quote::quote! {},
+            components: quote::quote! {},
+        };
+    }
+
+    let ecs: TokenStream = syn::parse_str(
+        &lifetimes
+            .iter()
+            .map(|l| format!("'{}", l))
+            .collect::<Vec<String>>()
+            .join(", "),
+    )
+    .expect("Failed to build lifetime list");
+
+    let builder_lifetimes = system_lifetimes
+        .iter()
+        .chain(resource_lifetimes.iter())
+        .map(|l| format!("'{}", l))
+        .collect::<Vec<String>>();
+
+    let builder: TokenStream = if builder_lifetimes.is_empty() {
+        quote::quote! {}
+    } else {
+        let builder: TokenStream =
+            syn::parse_str(&builder_lifetimes.join(", ")).expect("Failed to build lifetime list");
+        quote::quote! { <#builder> }
+    };
+
+    let component_lifetimes = component_lifetimes
+        .iter()
+        .map(|l| format!("'{}", l))
+        .collect::<Vec<String>>();
+
+    let components: TokenStream = if component_lifetimes.is_empty() {
+        quote::quote! {}
+    } else {
+        let components: TokenStream =
+            syn::parse_str(&component_lifetimes.join(", ")).expect("Failed to build lifetime list");
+        quote::quote! { <#components> }
+    };
+
+    GenericOutput {
+        ecs: quote::quote! { <#ecs> },
+        builder,
+        components,
+    }
 }

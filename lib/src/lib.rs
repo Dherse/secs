@@ -1,9 +1,9 @@
 pub mod executor;
 
+pub use crossbeam_channel;
 pub use fxhash;
 pub use hibitset;
 pub use parking_lot;
-pub use crossbeam_channel;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Entity(u32);

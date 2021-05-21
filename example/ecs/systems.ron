@@ -29,7 +29,6 @@
             Entity,
             Component(Write, "position"),
             Component(Read, "velocity"),
-            CommandBuffer,
         ],
     )
 ]

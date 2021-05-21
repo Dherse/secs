@@ -14,11 +14,7 @@ where
     let waker = waker_fn(move || thread.unpark());
     let cx = &mut Context::from_waker(&waker);
 
-    futures.extend(
-        iterator
-            .map(|future| poll_once(future, cx))
-            .flatten(),
-    );
+    futures.extend(iterator.map(|future| poll_once(future, cx)).flatten());
 
     while !futures.is_empty() {
         let mut i = 0;
