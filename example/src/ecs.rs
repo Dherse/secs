@@ -38,6 +38,7 @@ impl<'position> MyEcs<'position> {
     pub fn next(&self) -> MyEcsEntityBuilder<'position> {
         <MyEcsEntityBuilder>::new(self.components.next())
     }
+    #[doc = "Takes the `builder` and creates an entity in the ECS"]
     pub fn build(&mut self, builder: MyEcsEntityBuilder<'position>) {
         self.components.build(builder);
     }
@@ -174,6 +175,7 @@ impl<'position> MyEcsComponentStore<'position> {
         }
         self.bitset_enabled.remove(entity.index());
     }
+    #[doc = "Takes the `builder` and creates an entity in the storage"]
     pub fn build(&mut self, builder: MyEcsEntityBuilder<'position>) {
         self.alive.add(builder.entity.index());
         if let Some(value) = builder.position {

@@ -210,6 +210,7 @@ fn make_struct(
                 <#entity_builder>::new(self.components.next())
             }
 
+            #[doc = "Takes the `builder` and creates an entity in the ECS"]
             pub fn build(&mut self, builder: #entity_builder#component_generics) {
                 self.components.build(builder);
             }

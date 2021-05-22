@@ -24,7 +24,7 @@ pub enum ComponentStorage {
     Null,
 
     /// A storage that is flagged for writes: allows detection that the storage has been written to.
-    Flagged(Box<Self>),
+    Flagged(Box<ComponentStorage>),
 }
 
 impl ComponentStorage {

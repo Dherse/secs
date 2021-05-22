@@ -180,6 +180,7 @@ pub(crate) fn make_component_store(main: &ECS, components: &[Component],
                 #(#push_calls)*
             }
 
+            #[doc = "Takes the `builder` and creates an entity in the storage"]
             pub fn build(&mut self, builder: #name_builder#component_generics) {
                 self.alive.add(builder.entity.index());
                 #(#build_calls)*
