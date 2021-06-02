@@ -133,6 +133,9 @@ pub enum Element {
     /// A reference to a component
     Component(Accessor, String),
 
+    /// A required or not component that does not need to be queried
+    Filter(bool, String),
+
     /// A reference to a resource
     Resource(Accessor, String),
 
@@ -223,7 +226,7 @@ impl Element {
             }
             Element::Entity => quote::quote! { let entt = #id; },
             Element::CommandBuffer => quote::quote! {},
-            Element::Const(_) => quote::quote! {},
+            Element::Const(_) | Element::Filter(_, _) => quote::quote! {},
         }
     }
 
@@ -235,7 +238,7 @@ impl Element {
                     Span::call_site(),
                 );
 
-                quote::quote! { #name }
+                quote::quote! { #name, }
             }
             Element::Component(_, name) => {
                 let name = Ident::new(
@@ -243,7 +246,7 @@ impl Element {
                     Span::call_site(),
                 );
 
-                quote::quote! {#name }
+                quote::quote! { #name, }
             }
             Element::Resource(_, name) => {
                 let name = Ident::new(
@@ -251,13 +254,20 @@ impl Element {
                     Span::call_site(),
                 );
 
-                quote::quote! {#name }
+                quote::quote! { #name, }
             }
-            Element::Entity => quote::quote! { entt },
-            Element::Const(c) => syn::parse_str(c).expect("Failed to parse const"),
+            Element::Entity => quote::quote! { entt, },
+            Element::Const(c) => {
+                let expr: TokenStream = syn::parse_str(c).expect("Failed to parse const");
+
+                quote::quote! {
+                    expr,
+                }
+            },
             Element::CommandBuffer => {
-                quote::quote! { &mut #this.command_buffer }
-            }
+                quote::quote! { &mut #this.command_buffer, }
+            },
+        | Element::Filter(_, _) => quote::quote! { },
         }
     }
 }
@@ -342,8 +352,7 @@ impl SystemKind {
                             command_buffer = true;
                         }
                     }
-                    Element::Entity => {}
-                    Element::Const(_) => {}
+                    Element::Entity | Element::Const(_) | Element::Filter(_, _) => {}
                 }
             }
         }
@@ -351,23 +360,46 @@ impl SystemKind {
         let mut comp_iter = quote::quote! {};
         let mut first: bool = true;
         for element in &system.signature {
-            if let Element::Component(accessor, name) = element {
-                if accessor.is_opt() {
-                    continue;
+            match element {
+                Element::Component(accessor, name) => {
+                    if accessor.is_opt() {
+                        continue;
+                    }
+    
+                    let component = find_component(components, name);
+                    let bitset = component.as_bitset();
+                    let new_comp = quote::quote! {
+                        &components.#bitset
+                    };
+    
+                    if first {
+                        comp_iter = new_comp;
+                    } else {
+                        comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#new_comp, #comp_iter)};
+                    }
+                    first = false;
+                },
+                Element::Filter(not, name) => {
+                    let component = find_component(components, name);
+                    let bitset = component.as_bitset();
+                    let new_comp = if *not {
+                        quote::quote! {
+                            ::secs::hibitset::BitSetNot(&components.#bitset)
+                        }
+                    } else {
+                        quote::quote! {
+                            &components.#bitset
+                        }
+                    };
+    
+                    if first {
+                        comp_iter = new_comp;
+                    } else {
+                        comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#new_comp, #comp_iter)};
+                    }
+                    first = false;
                 }
-
-                let component = find_component(components, name);
-                let bitset = component.as_bitset();
-                let new_comp = quote::quote! {
-                    &components.#bitset
-                };
-
-                if first {
-                    comp_iter = new_comp;
-                } else {
-                    comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#new_comp, #comp_iter)};
-                }
-                first = false;
+                _ => continue
             }
         }
 
@@ -409,7 +441,7 @@ impl SystemKind {
                         #(#inits;)*
 
                         #start_if #function(
-                            #(#refs,)*
+                            #(#refs)*
                         )#flag #end_if
                     }
                 }

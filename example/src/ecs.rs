@@ -12,9 +12,10 @@ impl<'position> MyEcs<'position> {
     #[doc = "Runs the ECS"]
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let components = &mut self.components;
-        for id in
-            ::secs::hibitset::BitSetAnd(&components.bitset_velocity, &components.bitset_position)
-        {
+        for id in ::secs::hibitset::BitSetAnd(
+            ::secs::hibitset::BitSetNot(&components.bitset_enabled),
+            ::secs::hibitset::BitSetAnd(&components.bitset_velocity, &components.bitset_position),
+        ) {
             let id = ::secs::Entity::new(id);
             let entt = id;
             let sys_physics_comp_position = components

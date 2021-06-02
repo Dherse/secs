@@ -29,6 +29,7 @@
             Entity,
             Component(Write, "position"),
             Component(Read, "velocity"),
+            Filter(true, "enabled"),
         ],
     )
 ]
