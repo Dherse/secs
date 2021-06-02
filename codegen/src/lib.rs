@@ -174,7 +174,7 @@ fn make_struct(
             });
         }
     }
-    
+
     let mut res_fns = Vec::new();
     for res in resources {
         let name = res.as_field_ident();
@@ -183,8 +183,14 @@ fn make_struct(
         let get_mut = Ident::new(&format!("{}_mut", res.as_field_name()), Span::call_site());
         let set = Ident::new(&format!("set_{}", res.as_field_name()), Span::call_site());
 
-        let get_doc = format!("Gets a reference to the resource '{}' of type [`{}`]", res.name, res.path);
-        let get_mut_doc = format!("Gets a mutable reference to the resource '{}' of type [`{}`]", res.name, res.path);
+        let get_doc = format!(
+            "Gets a reference to the resource '{}' of type [`{}`]",
+            res.name, res.path
+        );
+        let get_mut_doc = format!(
+            "Gets a mutable reference to the resource '{}' of type [`{}`]",
+            res.name, res.path
+        );
         let set_doc = format!("Sets the resource '{}' of type [`{}`]", res.name, res.path);
 
         res_fns.push(quote::quote! {

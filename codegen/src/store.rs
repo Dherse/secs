@@ -1,9 +1,16 @@
 use proc_macro2::TokenStream;
 
-use crate::{GenericOutput, component::{Component, ComponentStorage}, ecs::ECS};
+use crate::{
+    component::{Component, ComponentStorage},
+    ecs::ECS,
+    GenericOutput,
+};
 
-pub(crate) fn make_component_store(main: &ECS, components: &[Component],
-    generics: &GenericOutput) -> TokenStream {
+pub(crate) fn make_component_store(
+    main: &ECS,
+    components: &[Component],
+    generics: &GenericOutput,
+) -> TokenStream {
     let component_store = main.as_component_store_ident();
 
     let component_types: Vec<TokenStream> =

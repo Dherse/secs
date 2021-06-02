@@ -1,7 +1,10 @@
 use std::{marker::PhantomData, time::Instant};
 
 use ecs::MyEcsBuilder;
-use secs::Entity;
+use secs::{
+    join::Join,
+    storage::{Read, Write},
+};
 
 pub mod ecs;
 
@@ -87,13 +90,13 @@ pub struct Position<'a> {
     x: f32,
     y: f32,
     z: f32,
-    _phantom: PhantomData<&'a ()>
+    _phantom: PhantomData<&'a ()>,
 }
 
 #[derive(Clone, Debug, Copy, Default)]
 pub struct Enabled;
 
-pub fn physics_system<'a>(_entity: Entity, pos: &mut Position<'a>, velo: &Velocity) {
+pub fn physics_system<'a>(pos: &mut Position<'a>, velo: &Velocity) {
     pos.x += velo.x;
     pos.y += velo.y;
     pos.z += velo.z;
@@ -101,4 +104,15 @@ pub fn physics_system<'a>(_entity: Entity, pos: &mut Position<'a>, velo: &Veloci
 
 pub fn test_system(delta_time: &mut DeltaTime) {
     delta_time.0 = 1e-3;
+}
+
+pub fn second_system<'sys, 'a>(
+    mut pos: Write<'sys, Position<'a>, "position">,
+    velo: Read<'sys, Velocity, "velocity">,
+) {
+    for (pos, velo) in (&mut pos, &velo).join() {
+        pos.x += velo.x;
+        pos.y += velo.y;
+        pos.z += velo.z;
+    }
 }

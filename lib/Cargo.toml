@@ -22,3 +22,6 @@ thread_local = "1.1"
 
 # Fast mpmc channels
 crossbeam-channel = "0.5.1"
+
+# Helpers for tuples
+tuple_utils = "0.3.0"

@@ -1,6 +1,6 @@
 #![enable(implicit_some)]
 [
-    System(
+    /*System(
         // The name of the system
         name: "physics",
 
@@ -26,13 +26,24 @@
         state: None,
 
         signature: [
-            Entity,
             Component(Write, "position"),
             Component(Read, "velocity"),
-            Filter(true, "enabled"),
+        ],
+    ),*/
+    System(
+        name: "second_system",
+        path: "crate::second_system",
+        kind: Function,
+        control_flow: false,
+        result: false,
+        stage: "Main",
+        state: None,
+        signature: [
+            Component(Write, "position"),
+            Component(Read, "velocity"),
         ],
     ),
-    System(
+    /*System(
         name: "test",
         path: "crate::test_system",
         kind: Empty,
@@ -43,5 +54,5 @@
         signature: [
             Resource(Write, "delta_time"),
         ],
-    ),
+    ),*/
 ]

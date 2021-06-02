@@ -69,6 +69,17 @@ impl ComponentStorage {
         }
     }
 
+    pub fn as_kind(&self) -> TokenStream {
+        match self {
+            ComponentStorage::Vec => quote::quote! { Vec },
+            ComponentStorage::HashMap => quote::quote! { HashMap },
+            ComponentStorage::BTreeMap => quote::quote! { BTreeMap },
+            ComponentStorage::DenseVec => todo!(),
+            ComponentStorage::Null => todo!("Null storage"),
+            ComponentStorage::Flagged(_) => todo!("Flagged storage"),
+        }
+    }
+
     pub fn read_function(
         &self,
         component: &Component,
@@ -219,11 +230,14 @@ impl ComponentStorage {
             ComponentStorage::Null => {
                 if let Some(lifetimes) = &comp.lifetimes {
                     if !lifetimes.is_empty() {
-                        panic!("Null components cannot have lifetimes, found for: {}", comp.name);
+                        panic!(
+                            "Null components cannot have lifetimes, found for: {}",
+                            comp.name
+                        );
                     }
                 }
                 quote::quote! { () }
-            },
+            }
             ComponentStorage::Flagged(flagged) => {
                 let flagged_ty = flagged.as_type(comp, ty);
                 quote::quote! { ::secs::Flagged<#flagged_ty> }

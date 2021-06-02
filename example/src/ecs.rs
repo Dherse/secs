@@ -12,28 +12,18 @@ impl<'position> MyEcs<'position> {
     #[doc = "Runs the ECS"]
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let components = &mut self.components;
-        for id in ::secs::hibitset::BitSetAnd(
-            ::secs::hibitset::BitSetNot(&components.bitset_enabled),
-            ::secs::hibitset::BitSetAnd(&components.bitset_velocity, &components.bitset_position),
-        ) {
-            let id = ::secs::Entity::new(id);
-            let entt = id;
-            let sys_physics_comp_position = components
-                .position
-                .get_mut(id.index() as usize)
-                .unwrap()
-                .as_mut()
-                .unwrap();
-            let sys_physics_comp_velocity = components
-                .velocity
-                .get(id.index() as usize)
-                .unwrap()
-                .as_ref()
-                .unwrap();
-            crate::physics_system(entt, sys_physics_comp_position, sys_physics_comp_velocity);
+        {
+            crate::second_system(
+                ::secs::storage::Write::new(
+                    ::secs::storage::WriteStorage::Vec(&mut components.position),
+                    &components.bitset_position,
+                ),
+                ::secs::storage::Read::new(
+                    ::secs::storage::ReadStorage::Vec(&components.velocity),
+                    &components.bitset_velocity,
+                ),
+            )
         }
-        let sys_test_res_delta_time = &mut self.resource_delta_time;
-        crate::test_system(sys_test_res_delta_time);
         self.command_buffer.build(&mut self.components);
         Ok(())
     }

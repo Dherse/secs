@@ -109,6 +109,37 @@ impl Accessor {
         }
     }
 
+    pub fn storage(
+        &self,
+        content: TokenStream,
+        kind: TokenStream,
+        bitset: TokenStream,
+    ) -> TokenStream {
+        match self {
+            Accessor::Read => {
+                quote::quote! {
+                    ::secs::storage::Read::new(
+                        ::secs::storage::ReadStorage::#kind(#content),
+                        #bitset,
+                    )
+                }
+            }
+            Accessor::Write => {
+                quote::quote! {
+                    ::secs::storage::Write::new(
+                        ::secs::storage::WriteStorage::#kind(#content),
+                        #bitset,
+                    )
+                }
+            }
+            Accessor::Mutex => panic!("Cannot use mutex in non for-each systems"),
+            Accessor::RwLock => panic!("Cannot use read-write locks in non for-each systems"),
+            Accessor::Option(_) => {
+                panic!("Cannot use optional accessors in non for-each systems")
+            }
+        }
+    }
+
     pub fn is_mut(&self) -> bool {
         match self {
             Accessor::Read => false,
@@ -230,6 +261,76 @@ impl Element {
         }
     }
 
+    pub fn storage(
+        &self,
+        system: &System,
+        this: TokenStream,
+        components: &[Component],
+        resources: &[Resource],
+    ) -> TokenStream {
+        match self {
+            Element::State(accessor) => {
+                let state_name = system.as_ident();
+                accessor.wrapper_init(
+                    quote::quote! {
+                        self.#state_name
+                    },
+                    true,
+                )
+            }
+            Element::Component(accessor, name) => {
+                let component = find_component(components, name);
+                let field = component.as_ident();
+
+                let reference = if accessor.is_mut() {
+                    quote::quote! { &mut }
+                } else {
+                    quote::quote! { & }
+                };
+                let content = quote::quote! { #reference#this.#field };
+
+                let kind = component.storage.as_kind();
+
+                let bitset = component.as_bitset();
+                let bitset = quote::quote! { &#this.#bitset};
+
+                let init = accessor.storage(content, kind, bitset);
+
+                quote::quote! {
+                    #init,
+                }
+            }
+            Element::Entity => {
+                quote::quote! {
+                    ::secs::storage::Entities::new(&#this.alive),
+                }
+            }
+            Element::Resource(accessor, name) => {
+                let resource = find_resource(resources, name);
+                let resource_name = resource.as_field_ident();
+                let init = accessor.wrapper_init(
+                    quote::quote! {
+                        self.#resource_name
+                    },
+                    true,
+                );
+
+                quote::quote! {
+                    #init,
+                }
+            }
+            Element::CommandBuffer => quote::quote! { &mut #this.command_buffer, },
+            Element::Const(c) => {
+                let expr: TokenStream = syn::parse_str(c).expect("Failed to parse const");
+
+                quote::quote! {
+                    #expr,
+                }
+            }
+            Element::Filter(_, _) => panic!("Filter are not support in non for-each systems"),
+        }
+    }
+
     pub fn getter(&self, system: &System, this: TokenStream) -> TokenStream {
         match self {
             Element::State(_) => {
@@ -263,11 +364,11 @@ impl Element {
                 quote::quote! {
                     #expr,
                 }
-            },
+            }
             Element::CommandBuffer => {
                 quote::quote! { &mut #this.command_buffer, }
-            },
-        | Element::Filter(_, _) => quote::quote! { },
+            }
+            Element::Filter(_, _) => quote::quote! {},
         }
     }
 }
@@ -368,20 +469,21 @@ impl SystemKind {
                     if accessor.is_opt() {
                         continue;
                     }
-    
+
                     let component = find_component(components, name);
                     let bitset = component.as_bitset();
                     let new_comp = quote::quote! {
                         &components.#bitset
                     };
-    
+
                     if first {
                         comp_iter = new_comp;
                     } else {
-                        comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#new_comp, #comp_iter)};
+                        comp_iter =
+                            quote::quote! { ::secs::hibitset::BitSetAnd(#new_comp, #comp_iter)};
                     }
                     first = false;
-                },
+                }
                 Element::Filter(not, name) => {
                     let component = find_component(components, name);
                     let bitset = component.as_bitset();
@@ -394,15 +496,16 @@ impl SystemKind {
                             &components.#bitset
                         }
                     };
-    
+
                     if first {
                         comp_iter = new_comp;
                     } else {
-                        comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#new_comp, #comp_iter)};
+                        comp_iter =
+                            quote::quote! { ::secs::hibitset::BitSetAnd(#new_comp, #comp_iter)};
                     }
                     first = false;
                 }
-                _ => continue
+                _ => continue,
             }
         }
 
@@ -427,20 +530,16 @@ impl SystemKind {
                     )
                 });
 
-
-                let refs = system
-                    .signature
-                    .iter()
-                    .map(|elem| {
-                        match elem {
-                            Element::Component(_, _) => {
-                                panic!("Empty systems cannot reference components");
-                            },
-                            _ => {}
+                let refs = system.signature.iter().map(|elem| {
+                    match elem {
+                        Element::Component(_, _) => {
+                            panic!("Empty systems cannot reference components");
                         }
+                        _ => {}
+                    }
 
-                        elem.getter(system, quote::quote! { self })
-                    });
+                    elem.getter(system, quote::quote! { self })
+                });
 
                 quote::quote! {
                     #(#inits;)*
@@ -487,6 +586,25 @@ impl SystemKind {
                         #start_if #function(
                             #(#refs)*
                         )#flag #end_if
+                    }
+                }
+            }
+            SystemKind::Function => {
+                let flag = if system.result {
+                    quote::quote! { ? }
+                } else {
+                    quote::quote! {}
+                };
+
+                let storages = system.signature.iter().map(|elem| {
+                    elem.storage(system, quote::quote! { components }, components, resources)
+                });
+
+                quote::quote! {
+                    {
+                        #function(
+                            #(#storages)*
+                        )#flag
                     }
                 }
             }
@@ -549,12 +667,8 @@ impl SystemKind {
 
                         futures.clear();
                     });
-
-
-
                 }
             }
-            SystemKind::Function => todo!(),
             SystemKind::AsyncFunction => todo!(),
         }
     }

@@ -1,8 +1,12 @@
 use proc_macro2::TokenStream;
 
-use crate::{GenericOutput, component::Component, ecs::ECS};
+use crate::{component::Component, ecs::ECS, GenericOutput};
 
-pub(crate) fn build_command_buffer(main: &ECS, components: &[Component], generics: &GenericOutput) -> TokenStream {
+pub(crate) fn build_command_buffer(
+    main: &ECS,
+    components: &[Component],
+    generics: &GenericOutput,
+) -> TokenStream {
     let name = main.as_command_buffer_ident();
     let entity_builder = main.as_entity_builder_ident();
     let component_store = main.as_component_store_ident();
