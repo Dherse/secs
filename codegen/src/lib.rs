@@ -257,7 +257,7 @@ fn make_struct(
                 &mut self.components
             }
 
-            #(#res_fns),*
+            #(#res_fns)*
         }
     }
 }

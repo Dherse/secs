@@ -261,7 +261,7 @@ impl Element {
                 let expr: TokenStream = syn::parse_str(c).expect("Failed to parse const");
 
                 quote::quote! {
-                    expr,
+                    #expr,
                 }
             },
             Element::CommandBuffer => {
