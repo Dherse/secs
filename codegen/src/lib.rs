@@ -7,8 +7,9 @@ use std::{
 
 use config::Config;
 use fxhash::{FxHashMap, FxHashSet};
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use serde::Deserialize;
+use syn::Ident;
 
 use crate::{
     builder::make_builder, command::build_command_buffer, component::Component, ecs::ECS,
@@ -173,6 +174,37 @@ fn make_struct(
             });
         }
     }
+    
+    let mut res_fns = Vec::new();
+    for res in resources {
+        let name = res.as_field_ident();
+        let ty = res.as_ty();
+
+        let get_mut = Ident::new(&format!("{}_mut", res.as_field_name()), Span::call_site());
+        let set = Ident::new(&format!("set_{}", res.as_field_name()), Span::call_site());
+
+        let get_doc = format!("Gets a reference to the resource '{}' of type [`{}`]", res.name, res.path);
+        let get_mut_doc = format!("Gets a mutable reference to the resource '{}' of type [`{}`]", res.name, res.path);
+        let set_doc = format!("Sets the resource '{}' of type [`{}`]", res.name, res.path);
+
+        res_fns.push(quote::quote! {
+            #[doc = #get_doc]
+            pub fn #name(&self) -> &#ty {
+                &self.#name
+            }
+
+            #[doc = #get_mut_doc]
+            pub fn #get_mut(&mut self) -> &mut #ty {
+                &mut self.#name
+            }
+
+            #[doc = #set_doc]
+            pub fn #set(&mut self, mut value: #ty) -> #ty {
+                ::std::mem::swap(&mut value, &mut self.#name);
+                value
+            }
+        });
+    }
 
     let component_store = main.as_component_store_ident();
     let entity_builder = main.as_entity_builder_ident();
@@ -224,6 +256,8 @@ fn make_struct(
             pub fn components_mut(&mut self) -> &mut #component_store#component_generics {
                 &mut self.components
             }
+
+            #(#res_fns),*
         }
     }
 }

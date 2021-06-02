@@ -51,6 +51,19 @@ impl<'position> MyEcs<'position> {
     pub fn components_mut(&mut self) -> &mut MyEcsComponentStore<'position> {
         &mut self.components
     }
+    #[doc = "Gets a reference to the resource 'delta_time' of type [`crate::DeltaTime`]"]
+    pub fn resource_delta_time(&self) -> &crate::DeltaTime {
+        &self.resource_delta_time
+    }
+    #[doc = "Gets a mutable reference to the resource 'delta_time' of type [`crate::DeltaTime`]"]
+    pub fn resource_delta_time_mut(&mut self) -> &mut crate::DeltaTime {
+        &mut self.resource_delta_time
+    }
+    #[doc = "Sets the resource 'delta_time' of type [`crate::DeltaTime`]"]
+    pub fn set_resource_delta_time(&mut self, mut value: crate::DeltaTime) -> crate::DeltaTime {
+        ::std::mem::swap(&mut value, &mut self.resource_delta_time);
+        value
+    }
 }
 #[derive(Default)]
 pub struct MyEcsBuilder {
