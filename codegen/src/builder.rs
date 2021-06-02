@@ -29,11 +29,16 @@ pub(crate) fn make_builder(
             let name = res.as_field_ident();
 
             let doc_str = format!("Sets the resource '{}' of type [`{}`]", res.name, res.path);
+            let value = if res.default {
+                quote::quote! { value }
+            } else {
+                quote::quote! { Some(value) }
+            };
 
             quote::quote! {
                 #[doc = #doc_str]
                 pub fn #name(mut self, value: #ty) -> Self {
-                    self.#name = value;
+                    self.#name = #value;
                     self
                 }
             }

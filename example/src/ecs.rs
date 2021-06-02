@@ -53,7 +53,7 @@ impl<'position> MyEcs<'position> {
 }
 #[derive(Default)]
 pub struct MyEcsBuilder {
-    resource_delta_time: crate::DeltaTime,
+    resource_delta_time: Option<crate::DeltaTime>,
 }
 impl MyEcsBuilder {
     #[doc = "Creates a new builder"]
@@ -66,7 +66,9 @@ impl MyEcsBuilder {
         MyEcs {
             command_buffer: MyEcsCommandBuffer::new(&components),
             components,
-            resource_delta_time: self.resource_delta_time,
+            resource_delta_time: self
+                .resource_delta_time
+                .expect("Resource `delta_time` of type `crate::DeltaTime` not set"),
         }
     }
     #[doc = "Builds the builder into the ECS with a capacity"]
@@ -75,12 +77,14 @@ impl MyEcsBuilder {
         MyEcs {
             command_buffer: MyEcsCommandBuffer::new(&components),
             components,
-            resource_delta_time: self.resource_delta_time,
+            resource_delta_time: self
+                .resource_delta_time
+                .expect("Resource `delta_time` of type `crate::DeltaTime` not set"),
         }
     }
     #[doc = "Sets the resource 'delta_time' of type [`crate::DeltaTime`]"]
     pub fn resource_delta_time(mut self, value: crate::DeltaTime) -> Self {
-        self.resource_delta_time = value;
+        self.resource_delta_time = Some(value);
         self
     }
 }

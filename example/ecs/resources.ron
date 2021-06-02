@@ -7,6 +7,6 @@
         path: "crate::DeltaTime",
         
         // Whether or not the resource implement default
-        default: true,
+        default: false,
     )
 ]
