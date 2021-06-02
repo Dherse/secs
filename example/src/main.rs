@@ -98,3 +98,7 @@ pub fn physics_system<'a>(_entity: Entity, pos: &mut Position<'a>, velo: &Veloci
     pos.y += velo.y;
     pos.z += velo.z;
 }
+
+pub fn test_system(delta_time: &mut DeltaTime) {
+    delta_time.0 = 1e-3;
+}

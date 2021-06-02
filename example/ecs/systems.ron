@@ -31,5 +31,17 @@
             Component(Read, "velocity"),
             Filter(true, "enabled"),
         ],
-    )
+    ),
+    System(
+        name: "test",
+        path: "crate::test_system",
+        kind: Empty,
+        control_flow: false,
+        result: false,
+        stage: "Main",
+        state: None,
+        signature: [
+            Resource(Write, "delta_time"),
+        ],
+    ),
 ]

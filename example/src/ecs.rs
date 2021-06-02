@@ -32,6 +32,8 @@ impl<'position> MyEcs<'position> {
                 .unwrap();
             crate::physics_system(entt, sys_physics_comp_position, sys_physics_comp_velocity);
         }
+        let sys_test_res_delta_time = &mut self.resource_delta_time;
+        crate::test_system(sys_test_res_delta_time);
         self.command_buffer.build(&mut self.components);
         Ok(())
     }

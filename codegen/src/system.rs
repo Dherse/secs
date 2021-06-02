@@ -173,7 +173,7 @@ impl Element {
                 let state_name = system.as_ident();
                 let init = accessor.wrapper_init(
                     quote::quote! {
-                        #this.#state_name
+                        self.#state_name
                     },
                     true,
                 );
@@ -194,7 +194,7 @@ impl Element {
                 let state_name = resource.as_field_ident();
                 let init = accessor.wrapper_init(
                     quote::quote! {
-                        #this.#state_name
+                        self.#state_name
                     },
                     true,
                 );
@@ -274,6 +274,9 @@ impl Element {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum SystemKind {
+    /// The system is empty: it does not use any component
+    Empty,
+
     /// The system is a function that control iteration internally
     Function,
 
@@ -406,6 +409,47 @@ impl SystemKind {
         // comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#comp_iter, &components.alive) };
 
         match self {
+            SystemKind::Empty => {
+                let flag = if system.result {
+                    quote::quote! { ? }
+                } else {
+                    quote::quote! {}
+                };
+
+                let inits = system.signature.iter().map(|elem| {
+                    elem.init(
+                        quote::quote! { components },
+                        quote::quote! { id },
+                        components,
+                        resources,
+                        system,
+                        false,
+                    )
+                });
+
+
+                let refs = system
+                    .signature
+                    .iter()
+                    .map(|elem| {
+                        match elem {
+                            Element::Component(_, _) => {
+                                panic!("Empty systems cannot reference components");
+                            },
+                            _ => {}
+                        }
+
+                        elem.getter(system, quote::quote! { self })
+                    });
+
+                quote::quote! {
+                    #(#inits;)*
+
+                    #function(
+                        #(#refs)*
+                    )#flag;
+                }
+            }
             SystemKind::ForEachFunction => {
                 let flag = if system.result {
                     quote::quote! { ? }
