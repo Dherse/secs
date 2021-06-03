@@ -297,12 +297,12 @@ impl Element {
                 let init = accessor.storage(content, kind, bitset);
 
                 quote::quote! {
-                    #init,
+                    #init
                 }
             }
             Element::Entity => {
                 quote::quote! {
-                    ::secs::storage::Entities::new(&#this.alive),
+                    ::secs::storage::Entities::new(&#this.alive)
                 }
             }
             Element::Resource(accessor, name) => {
@@ -316,7 +316,7 @@ impl Element {
                 );
 
                 quote::quote! {
-                    #init,
+                    #init
                 }
             }
             Element::CommandBuffer => quote::quote! { &mut #this.command_buffer, },
@@ -324,7 +324,7 @@ impl Element {
                 let expr: TokenStream = syn::parse_str(c).expect("Failed to parse const");
 
                 quote::quote! {
-                    #expr,
+                    #expr
                 }
             }
             Element::Filter(_, _) => panic!("Filter are not support in non for-each systems"),
@@ -375,9 +375,6 @@ impl Element {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum SystemKind {
-    /// The system is empty: it does not use any component
-    Empty,
-
     /// The system is a function that control iteration internally
     Function,
 
@@ -512,43 +509,6 @@ impl SystemKind {
         // comp_iter = quote::quote! { ::secs::hibitset::BitSetAnd(#comp_iter, &components.alive) };
 
         match self {
-            SystemKind::Empty => {
-                let flag = if system.result {
-                    quote::quote! { ? }
-                } else {
-                    quote::quote! {}
-                };
-
-                let inits = system.signature.iter().map(|elem| {
-                    elem.init(
-                        quote::quote! { components },
-                        quote::quote! { id },
-                        components,
-                        resources,
-                        system,
-                        false,
-                    )
-                });
-
-                let refs = system.signature.iter().map(|elem| {
-                    match elem {
-                        Element::Component(_, _) => {
-                            panic!("Empty systems cannot reference components");
-                        }
-                        _ => {}
-                    }
-
-                    elem.getter(system, quote::quote! { self })
-                });
-
-                quote::quote! {
-                    #(#inits;)*
-
-                    #function(
-                        #(#refs)*
-                    )#flag;
-                }
-            }
             SystemKind::ForEachFunction => {
                 let flag = if system.result {
                     quote::quote! { ? }
@@ -603,7 +563,7 @@ impl SystemKind {
                 quote::quote! {
                     {
                         #function(
-                            #(#storages)*
+                            #(#storages),*
                         )#flag
                     }
                 }
