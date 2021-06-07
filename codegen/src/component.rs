@@ -202,18 +202,18 @@ impl ComponentStorage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Component {
+pub struct Component<'a> {
     /// The path to the component
-    pub path: String,
+    pub path: &'a str,
 
     /// The name of the component (allows multiple components with the same type but different names)
-    pub name: String,
+    pub name: &'a str,
 
     /// The type of storage used by this component
     pub storage: ComponentStorage,
 
     /// List of lifetimes the `path` contains
-    pub lifetimes: Option<Vec<String>>,
+    pub lifetimes: Option<Vec<&'a str>>,
 }
 
 impl ComponentStorage {
@@ -246,7 +246,7 @@ impl ComponentStorage {
     }
 }
 
-impl Component {
+impl<'a> Component<'a> {
     pub fn as_field_name(&self) -> String {
         self.name.to_case(Case::Snake)
     }

@@ -6,9 +6,9 @@ use crate::{
     GenericOutput,
 };
 
-pub(crate) fn make_component_store(
-    main: &ECS,
-    components: &[Component],
+pub(crate) fn make_component_store<'a>(
+    main: &ECS<'a>,
+    components: &[Component<'a>],
     generics: &GenericOutput,
 ) -> TokenStream {
     let component_store = main.as_component_store_ident();

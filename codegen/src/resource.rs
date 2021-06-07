@@ -3,23 +3,23 @@ use proc_macro2::{Ident, Span, TokenStream};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Resource {
+pub struct Resource<'a> {
     /// The path to the resource type
-    pub path: String,
+    pub path: &'a str,
 
     /// The name of the resource (allows multiple components with the same type but different names)
-    pub name: String,
+    pub name: &'a str,
 
     /// Whether or not the resource implement default
     pub default: bool,
 
     /// List of lifetimes the `path` contains
-    pub lifetimes: Option<Vec<String>>,
+    pub lifetimes: Option<Vec<&'a str>>,
 }
 
-impl Resource {
+impl<'a> Resource<'a> {
     pub fn as_field_name(&self) -> String {
-        format!("resource_{}", self.name.to_case(Case::Snake))
+        format!("resource_{}", self.name).to_case(Case::Snake)
     }
 
     pub fn as_field_ident(&self) -> Ident {

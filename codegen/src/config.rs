@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
+use crate::{component::Component, resource::Resource, system::System};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Config {
+#[derive(Debug, Clone)]
+pub struct Config<'a> {
     /// Whether to print cargo control strings, enabled this if using from a build script.
     pub cargo_control: bool,
 
@@ -13,26 +13,48 @@ pub struct Config {
     /// Component files
     pub components: Vec<PathBuf>,
 
+    /// Built components
+    pub built_components: Vec<Component<'a>>,
+
     /// Resource files
     pub resources: Vec<PathBuf>,
 
+    /// Built resources
+    pub built_resources: Vec<Resource<'a>>,
+
     /// System files
     pub systems: Vec<PathBuf>,
+
+    /// Built systems
+    pub built_systems: Vec<System<'a>>,
 
     /// Main ECS config file
     pub main: PathBuf,
 }
 
-impl Config {
+impl<'a> Config<'a> {
     pub fn new<P: Into<PathBuf>>(main: P) -> Self {
         Self {
             cargo_control: true,
             rustfmt: true,
+            built_components: Vec::new(),
             components: Vec::new(),
+            built_resources: Vec::new(),
             resources: Vec::new(),
+            built_systems: Vec::new(),
             systems: Vec::new(),
             main: main.into(),
         }
+    }
+
+    pub fn rustmft(mut self, enabled: bool) -> Self {
+        self.rustfmt = enabled;
+        self
+    }
+
+    pub fn set_rustmft(&mut self, enabled: bool) -> &mut Self {
+        self.rustfmt = enabled;
+        self
     }
 
     pub fn cargo_control(mut self, cargo_control: bool) -> Self {
@@ -55,6 +77,16 @@ impl Config {
         self
     }
 
+    pub fn component(mut self, new: Component<'a>) -> Self {
+        self.built_components.push(new);
+        self
+    }
+
+    pub fn add_component(&mut self, new: Component<'a>) -> &mut Self {
+        self.built_components.push(new);
+        self
+    }
+
     pub fn resources<P: Into<PathBuf>>(mut self, new: P) -> Self {
         self.resources.push(new.into());
         self
@@ -65,6 +97,16 @@ impl Config {
         self
     }
 
+    pub fn resource(mut self, new: Resource<'a>) -> Self {
+        self.built_resources.push(new);
+        self
+    }
+
+    pub fn add_resource(&mut self, new: Resource<'a>) -> &mut Self {
+        self.built_resources.push(new);
+        self
+    }
+
     pub fn systems<P: Into<PathBuf>>(mut self, new: P) -> Self {
         self.systems.push(new.into());
         self
@@ -72,6 +114,16 @@ impl Config {
 
     pub fn add_systems<P: Into<PathBuf>>(&mut self, new: P) -> &mut Self {
         self.systems.push(new.into());
+        self
+    }
+
+    pub fn system(mut self, new: System<'a>) -> Self {
+        self.built_systems.push(new);
+        self
+    }
+
+    pub fn add_system(&mut self, new: System<'a>) -> &mut Self {
+        self.built_systems.push(new);
         self
     }
 }

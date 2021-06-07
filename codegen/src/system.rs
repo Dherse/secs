@@ -7,12 +7,12 @@ use serde::{Deserialize, Serialize};
 use crate::{component::Component, ecs::ECS, find_component, find_resource, resource::Resource};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct System {
+pub struct System<'a> {
     /// The name of the system
-    pub name: String,
+    pub name: &'a str,
 
     /// The path of the function
-    pub path: String,
+    pub path: &'a str,
 
     /// The type of the system
     pub kind: SystemKind,
@@ -24,19 +24,19 @@ pub struct System {
     pub result: bool,
 
     /// The stage in which to execute this system
-    pub stage: String,
+    pub stage: &'a str,
 
     /// The state of this system, these must be specified when the system starts or implement [`Default`]
-    pub state: Option<String>,
+    pub state: Option<&'a str>,
 
     /// List of lifetimes the `state` contains
-    pub lifetimes: Option<Vec<String>>,
+    pub lifetimes: Option<Vec<&'a str>>,
 
     // Signature of the system
     pub signature: Vec<Element>,
 }
 
-impl System {
+impl<'a> System<'a> {
     pub fn as_field_name(&self) -> String {
         format!("system_{}", self.name.to_case(Case::Snake))
     }

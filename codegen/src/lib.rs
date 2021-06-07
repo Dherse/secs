@@ -1,14 +1,12 @@
 use std::{
     fs::File,
     io::{self, Read, Write},
-    path::Path,
     process::{Command, Stdio},
 };
 
 use config::Config;
 use fxhash::{FxHashMap, FxHashSet};
 use proc_macro2::{Span, TokenStream};
-use serde::Deserialize;
 use syn::Ident;
 
 use crate::{
@@ -26,42 +24,67 @@ mod resource;
 mod store;
 mod system;
 
-pub fn build(config: Config) -> String {
+pub fn build<'a>(config: Config<'a>) -> String {
     // Load the component files
-    let components: Vec<Component> = config
-        .components
-        .iter()
-        .map(|f| load::<Vec<Component>>(&config, f))
-        .collect::<Result<Vec<Vec<_>>, _>>()
-        .unwrap()
-        .into_iter()
-        .flatten()
-        .collect();
+    let comp_contents = config.components.iter()
+        .map(|f| {
+            let mut out = String::with_capacity(4096);
+            let mut file = File::open(f)?;
+            file.read_to_string(&mut out)?;
 
-    // Load the resources file
-    let resources: Vec<Resource> = config
-        .resources
-        .iter()
-        .map(|f| load::<Vec<Resource>>(&config, f))
-        .collect::<Result<Vec<Vec<_>>, _>>()
-        .unwrap()
-        .into_iter()
-        .flatten()
-        .collect();
+            Ok(out)
+        }).collect::<Result<Vec<String>, io::Error>>().unwrap();
 
-    // Load the systems
-    let systems: Vec<System> = config
-        .systems
-        .iter()
-        .map(|f| load::<Vec<System>>(&config, f))
-        .collect::<Result<Vec<Vec<_>>, _>>()
-        .unwrap()
-        .into_iter()
-        .flatten()
-        .collect();
+    let mut components = Vec::new();
+    components.extend(config.built_components);
+    comp_contents.iter().for_each(|c| {
+        components.extend(ron::from_str::<Vec<Component>>(c).unwrap());
+    });
 
-    // Load the main ECS files
-    let main: ECS = load(&config, &config.main).unwrap();
+    // Load the component files
+    let res_contents = config.resources.iter()
+        .map(|f| {
+            let mut out = String::with_capacity(4096);
+            let mut file = File::open(f)?;
+            file.read_to_string(&mut out)?;
+
+            Ok(out)
+        }).collect::<Result<Vec<String>, io::Error>>().unwrap();
+
+    let mut resources = Vec::new();
+    resources.extend(config.built_resources);
+    res_contents.iter().for_each(|c| {
+        resources.extend(ron::from_str::<Vec<Resource>>(c).unwrap());
+    });
+
+    // Load the component files
+    let sys_contents = config.systems.iter()
+        .map(|f| {
+            let mut out = String::with_capacity(4096);
+            let mut file = File::open(f)?;
+            file.read_to_string(&mut out)?;
+
+            Ok(out)
+        }).collect::<Result<Vec<String>, io::Error>>().unwrap();
+
+    let mut systems = Vec::new();
+    systems.extend(config.built_systems);
+    sys_contents.iter().for_each(|c| {
+        systems.extend(ron::from_str::<Vec<System>>(c).unwrap());
+    });
+
+    let main_contents = {
+        let mut out = String::with_capacity(4096);
+        let mut file = File::open(&config.main).unwrap();
+        file.read_to_string(&mut out).unwrap();
+
+        out
+    };
+
+    let main: ECS = match ron::from_str(&main_contents) {
+        Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+        Ok(o) => Ok(o),
+    }.unwrap();
 
     let component_lifetimes = components
         .iter()
@@ -119,11 +142,11 @@ pub fn build(config: Config) -> String {
     }
 }
 
-fn make_struct(
-    main: &ECS,
-    components: &[Component],
-    resources: &[Resource],
-    systems: &[System],
+fn make_struct<'a>(
+    main: &ECS<'a>,
+    components: &[Component<'a>],
+    resources: &[Resource<'a>],
+    systems: &[System<'a>],
     generics: &GenericOutput,
 ) -> TokenStream {
     let name = main.as_ident();
@@ -142,12 +165,12 @@ fn make_struct(
         &main
             .error
             .clone()
-            .unwrap_or_else(|| "Box<dyn std::error::Error>".to_owned()),
+            .unwrap_or_else(|| "Box<dyn std::error::Error>"),
     )
     .expect("Failed to parse error type");
 
     // Regroup systems by stage (for scheduling)
-    let mut systems_by_stage: FxHashMap<String, Vec<System>> = FxHashMap::default();
+    let mut systems_by_stage: FxHashMap<&'a str, Vec<System<'a>>> = FxHashMap::default();
     for sys in systems {
         assert!(
             main.stages.contains(&sys.stage),
@@ -268,22 +291,6 @@ fn make_struct(
     }
 }
 
-fn load<O: for<'de> Deserialize<'de>>(config: &Config, path: &Path) -> Result<O, io::Error> {
-    if config.cargo_control {
-        println!("cargo:rerun-if-changed={}", path.display());
-    }
-
-    let mut file = File::open(path)?;
-
-    let mut buf = String::with_capacity(4096);
-    file.read_to_string(&mut buf)?;
-
-    match ron::from_str(&buf) {
-        Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-        Ok(o) => Ok(o),
-    }
-}
-
 fn run_rustfmt(source: String) -> Result<String, io::Error> {
     // This is code shamefully yoinked from the bindgen repo, all credits to them
 
@@ -333,7 +340,7 @@ fn run_rustfmt(source: String) -> Result<String, io::Error> {
     }
 }
 
-pub fn find_component<'a>(components: &'a [Component], name: &str) -> &'a Component {
+pub fn find_component<'a, 'b: 'a>(components: &'a [Component<'b>], name: &str) -> &'a Component<'b> {
     for comp in components {
         if comp.name == name {
             return comp;
@@ -343,7 +350,7 @@ pub fn find_component<'a>(components: &'a [Component], name: &str) -> &'a Compon
     panic!("Unknown component: {}", name);
 }
 
-pub fn find_resource<'a>(resources: &'a [Resource], name: &str) -> &'a Resource {
+pub fn find_resource<'a, 'b: 'a>(resources: &'a [Resource<'b>], name: &str) -> &'a Resource<'b> {
     for res in resources {
         if res.name == name {
             return res;
@@ -359,11 +366,11 @@ pub(crate) struct GenericOutput {
     pub components: TokenStream,
 }
 
-fn make_generics(
-    lifetimes: FxHashSet<String>,
-    component_lifetimes: FxHashSet<String>,
-    system_lifetimes: FxHashSet<String>,
-    resource_lifetimes: FxHashSet<String>,
+fn make_generics<'a>(
+    lifetimes: FxHashSet<&'a str>,
+    component_lifetimes: FxHashSet<&'a str>,
+    system_lifetimes: FxHashSet<&'a str>,
+    resource_lifetimes: FxHashSet<&'a str>,
 ) -> GenericOutput {
     if lifetimes.is_empty() {
         return GenericOutput {
